@@ -75,6 +75,77 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         len_to_copy as i32
     })?;
     
+    linker.func_wrap("env", "web_get", |mut caller: Caller<'_, AgentState>, ptr: i32, len: i32, out_ptr: i32, out_max: i32| -> i32 {
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        
+        let mut url_bytes = vec![0u8; len as usize];
+        memory.read(&caller, ptr as usize, &mut url_bytes).unwrap();
+        let url = String::from_utf8_lossy(&url_bytes).to_string();
+        
+        info!("[MCP Syscall] 'web_get' invoked for url: {}", url);
+        
+        let response_text = match ureq::get(&url).call() {
+            Ok(res) => res.into_string().unwrap_or_else(|_| "Failed to decode response".to_string()),
+            Err(e) => format!("HTTP Request failed: {}", e),
+        };
+        
+        let resp_bytes = response_text.as_bytes();
+        let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
+        
+        memory.write(&mut caller, out_ptr as usize, &resp_bytes[..len_to_copy]).unwrap();
+        
+        len_to_copy as i32
+    })?;
+    
+    linker.func_wrap("env", "memory_store", |mut caller: Caller<'_, AgentState>, ptr: i32, len: i32| -> i32 {
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        
+        let mut content_bytes = vec![0u8; len as usize];
+        memory.read(&caller, ptr as usize, &mut content_bytes).unwrap();
+        let content = String::from_utf8_lossy(&content_bytes).to_string();
+        
+        info!("[MCP Syscall] 'memory_store' saving: {}", content);
+        
+        if let Ok(conn) = rusqlite::Connection::open("nanos_memory.db") {
+            conn.execute("CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, content TEXT)", []).unwrap();
+            conn.execute("INSERT INTO memories (content) VALUES (?1)", rusqlite::params![content]).unwrap();
+            1 // Success
+        } else {
+            0 // Failure
+        }
+    })?;
+    
+    linker.func_wrap("env", "memory_recall", |mut caller: Caller<'_, AgentState>, ptr: i32, len: i32, out_ptr: i32, out_max: i32| -> i32 {
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        
+        let mut query_bytes = vec![0u8; len as usize];
+        memory.read(&caller, ptr as usize, &mut query_bytes).unwrap();
+        let query = String::from_utf8_lossy(&query_bytes).to_string();
+        
+        info!("[MCP Syscall] 'memory_recall' searching for: {}", query);
+        
+        let mut result = String::from("No memory found.");
+        
+        if let Ok(conn) = rusqlite::Connection::open("nanos_memory.db") {
+            let sql = "SELECT content FROM memories WHERE content LIKE ?1 LIMIT 1";
+            let like_query = format!("%{}%", query);
+            let mut stmt = conn.prepare(sql).unwrap();
+            if let Ok(mut rows) = stmt.query(rusqlite::params![like_query]) {
+                if let Ok(Some(row)) = rows.next() {
+                    let content: String = row.get(0).unwrap();
+                    result = content;
+                }
+            }
+        }
+        
+        let resp_bytes = result.as_bytes();
+        let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
+        
+        memory.write(&mut caller, out_ptr as usize, &resp_bytes[..len_to_copy]).unwrap();
+        
+        len_to_copy as i32
+    })?;
+    
     linker.func_wrap("env", "llm_infer", |mut caller: Caller<'_, AgentState>, prompt_ptr: i32, prompt_len: i32, out_ptr: i32, out_max: i32| -> i32 {
         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
         
