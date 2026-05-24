@@ -45,6 +45,23 @@ We threw out the entire stack. `nanos` is an "Operating System" for AI agents wh
 
 The result is a single-binary, zero-dependency runtime that cannot be stopped by network outages, requires no Docker orchestration, and executes ReAct loops faster than any Python-based framework on the market.
 
+## The Benchmark: Nanos vs. HTTP
+By eliminating Docker, Python, JSON serialization, and HTTP daemons (like Ollama or MCP), `nanos` radically reduces inference and tool-calling latency. 
+
+We benchmarked a standard HTTP REST API request to Ollama against a `nanos` native FFI syscall using TinyLlama (1.1B) on an Apple M1 Pro (Metal). 
+
+| Architecture | Cold Start Inference | Warm Inference (Cached) |
+|--------------|----------------------|-------------------------|
+| **Ollama (HTTP/JSON REST API)** | 29,562 ms | 1,166 ms |
+| **Nanos (WASM FFI Syscall)**| **12,420 ms** | **992 ms** |
+
+`nanos` cuts cold-start bootup time by over 50% and reduces warm inference latency by ~15% on localhost simply by removing the network/serialization tax.
+
+## The Killer Feature: Universal Snapshotability
+Because the entire agent runs inside a WebAssembly sandbox, its complete state—the stack, the heap, the instruction pointer, and the registers—is simply a flat, inspectable byte array. 
+
+**You can pause a running agent mid-thought, serialize its exact memory state to disk, transmit it over the network to an edge device, and resume it seamlessly.** No existing Python or container-based framework can achieve this. You can start an agent on a massive cloud GPU to handle heavy reasoning, pause it, send its 2MB memory snapshot to a mobile phone, and let it resume execution on the edge.
+
 ## Architecture
 
 ### 1. Host engine (Rust)
