@@ -1,5 +1,5 @@
 import time
-import requests
+import urllib.request
 import json
 
 # This script benchmarks the traditional HTTP JSON REST API approach (e.g. LangChain -> Ollama)
@@ -28,10 +28,14 @@ def bench_http():
     start_time = time.perf_counter()
     
     try:
-        response = requests.post("http://localhost:11434/api/generate", json=payload)
-        response.raise_for_status()
-        data = response.json()
-        
+        req = urllib.request.Request(
+            "http://localhost:11434/api/generate",
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'}
+        )
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            
         end_time = time.perf_counter()
         
         latency_ms = (end_time - start_time) * 1000

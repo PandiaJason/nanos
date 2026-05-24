@@ -64,6 +64,10 @@ Example output:
 
                     let engine = llm::LlmEngine::new(&agent_manifest.model.path, agent_manifest.model.context_window).unwrap();
                     
+                    info!("Running warmup inference (compiling metal kernels)...");
+                    let _ = engine.infer(&full_prompt).unwrap();
+
+                    info!("Running timed benchmark inference...");
                     let start = std::time::Instant::now();
                     let response = engine.infer(&full_prompt).unwrap();
                     let elapsed = start.elapsed();
