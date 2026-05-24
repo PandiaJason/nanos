@@ -1,0 +1,132 @@
+# nanos
+
+A single-binary, zero-dependency AI agent runtime.
+
+`nanos` replaces the entire Docker + Python + HTTP server + JSON API stack typically used to run AI agents. It is a bare-metal Rust runtime where the agent, the tools, and the LLM all live in the same memory space.
+
+## The problem
+Every modern AI agent stack looks like this:
+Docker container (200MB+)
+  → Python interpreter boot (~2s)
+    → pip imports (langchain, transformers, openai...)
+      → MCP tool server (separate HTTP process)
+        → LLM API call (network, serialize, wait, parse)
+
+Each arrow is latency, memory, and a failure surface. The agent does not control any of it.
+
+## What nanos does instead
+`nanos run agent.nano`
+  → WASM sandbox boots (<50ms)
+    → model mmap'd to GPU (Metal / CUDA)
+      → fs_read: native syscall, zero network
+        → llm_infer: pointer pass, in-memory
+          → agent loop: think → act → observe → repeat
+            → clean exit
+
+No daemon. No interpreter. No HTTP. No serialization.
+
+## Architecture
+
+### 1. Host engine (Rust)
+The `nanos` binary is the OS kernel for agents. It owns memory, hardware, and the process boundary.
+* **Manifest parser** — `serde_yaml` deserializes `agent.nano` into a strongly-typed `AgentManifest` struct defining model path, allowed tools, step budget, and memory limits.
+* **Execution engine** — `wasmtime::Engine` instantiated without Component Model overhead, using raw core WASM for maximum performance.
+* **State injection** — `AgentState` struct passed into `wasmtime::Store`, holding a mutable reference to the initialized LLM engine so syscalls can safely reach the neural weights from inside the sandbox.
+
+### 2. Neural co-processor (llama-cpp-2)
+`nanos` binds directly to the C++ inference engine via the `llama-cpp-2` crate, bypassing HTTP servers like Ollama or vLLM entirely.
+* **Metal GPU offload** — on boot, `nanos` detects Apple Silicon and memory-maps GGUF weights directly to the GPU. TinyLlama 1.1B: 23/23 layers offloaded to MTL0, 636 MB resident.
+* **Native generation loop** — a Rust autoregressive decoding loop allocates a `LlamaContext` (512+ tokens) and a `LlamaBatch`. The host tokenizes the prompt into `LlamaToken` IDs, pushes them into the compute graph (`ctx.decode`), and runs a greedy sampling loop (`candidates.max_by`) streaming tokens until EOS or max_tokens.
+* **Zero Python** — no interpreter, no bindings layer, no subprocess. The weights answer directly.
+
+### 3. Process boundary (WASM linear memory)
+Agent logic is compiled to `wasm32-unknown-unknown` and loaded as an isolated module.
+* **Memory isolation** — the agent has zero access to the host filesystem, network, or OS threading. The sandbox enforces this at the hardware instruction level, not by policy.
+* **Zero-serialization data transfer** — traditional agents serialize prompts to JSON, send over TCP, wait for HTTP, parse the response. `nanos` transfers data by passing raw memory pointers (i32 offsets) across the WASM boundary. The prompt never becomes a string on the wire.
+
+### 4. Tool ABI (native syscalls)
+Host functions are mapped into the WASM sandbox via `linker.func_wrap`. These are syscalls — the agent's only interface to the outside world.
+* `fs_read(path_ptr, path_len, out_buf, out_buf_len) -> i32`
+The WASM module passes a pointer to a virtual file path. The host reads those bytes from WASM memory, performs the filesystem read, and writes the result directly into the guest's `out_buf`. No copies through userspace. No network hop.
+* `llm_infer(prompt_ptr, prompt_len, out_buf, out_buf_len) -> i32`
+The WASM module passes a pointer to its prompt. The host intercepts it, triggers the native `llama-cpp-2` evaluation graph on the GPU, and writes the generated string back into guest memory. First token in milliseconds.
+
+Every syscall is declared in `agent.nano`. Anything not declared is denied at the boundary — the WASM module cannot call what the host has not registered.
+
+### 5. Autonomous agent (WASM guest loop)
+The agent (`nanos-core-agent`) is a lightweight Rust binary compiled to WASM. It runs the ReAct loop natively inside the sandbox.
+* **ReAct state machine** — maintains a mutable `String` context buffer across steps.
+* **Dispatch** — calls `llm_infer`, decodes the resulting UTF-8 bytes, scans for trigger strings like `ACTION: fs_read`.
+* **Cognitive loop** — when an action is parsed, immediately triggers the corresponding syscall, appends the returned bytes under an `<|observation|>` tag, and loops back to inference. No external scheduler. No async runtime. Just a loop.
+
+## The agent.nano manifest
+```yaml
+model: models/tinyllama-1.1b-q4.gguf
+goal: |
+  Read /workspace/report.txt and summarise it in three bullet points.
+
+tools:
+  - fs_read: /workspace/**
+  - fs_write: /workspace/summary.md
+  - shell: false
+
+memory:
+  ram: 512mb
+  context_window: 512
+
+limits:
+  steps: 20
+  wall_time: 60s
+
+output: stdout
+```
+The manifest is the unit of deployment. It describes what the agent is allowed to do — not how to build an environment. You ship the manifest, not a container image.
+
+## CLI
+```bash
+# run an agent
+nanos run agent.nano
+
+# ask a one-shot question (no manifest)
+nanos ask --model tinyllama-q4 --tools fs_read "summarise report.txt"
+
+# serve an MCP tool server
+nanos mcp serve tools/github.nano --port 3000
+
+# inspect running processes
+nanos ps
+
+# hard stop
+nanos kill <pid>
+```
+
+## What this eliminates
+| Traditional stack | nanos |
+|-------------------|-------|
+| Docker image (200MB+) | WASM binary (<1MB) |
+| Python interpreter (~2s boot) | Compiled Rust, boots in <50ms |
+| HTTP MCP server (separate process) | Native host functions |
+| JSON serialization per tool call | Raw memory pointer pass |
+| GPU config (manual) | Auto-detected, Metal/CUDA offload |
+| Orphan processes on crash | Guaranteed clean exit |
+
+## What the MVP proves
+- [x] WASM sandbox boots and isolates agent code
+- [x] 23/23 LLM layers offloaded to Metal GPU automatically
+- [x] `fs_read` works as a native in-memory syscall
+- [x] `llm_infer` crosses the WASM boundary with pointer semantics
+- [x] Full loop runs: read → infer → output → clean exit
+- [x] Zero network requests in the critical path
+
+## Roadmap
+- [ ] Multi-step ReAct loop with N tool calls
+- [ ] `web_get` syscall (HTTP fetch, sandboxed to allowlist)
+- [ ] `memory_store` / `memory_recall` (sqlite-vec, built-in vector store)
+- [ ] `agent.nano` manifest enforces cgroup RAM limits
+- [ ] Fleet mode: `nanos fleet --workers 8 --each agent.nano`
+- [ ] Linux + x86 cross-platform (currently Mac / Metal)
+- [ ] Larger models: 7B, 13B with quantization
+- [ ] Rust embed API: `nanos_spawn()` for library use
+
+---
+Built in Rust. No Python. No Docker. No HTTP. Just the agent, the model, and the hardware.

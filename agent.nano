@@ -1,0 +1,17 @@
+name: "pdf-summarizer"
+model:
+  path: "./models/tinyllama.gguf"
+  context_window: 4096
+resources:
+  memory: "512mb"
+  max_steps: 20
+permissions:
+  fs_read:
+    - "/docs"
+  fs_write:
+    - "/output/reports"
+  network: false
+tools:
+  - "fs_read"
+  - "fs_write"
+goal: "Read all PDF files in /docs, summarize them, and write a report.md in /output/reports"
