@@ -29,6 +29,7 @@ pub struct ResourceLimits {
 pub struct Permissions {
     pub fs_read: Option<Vec<String>>,
     pub fs_write: Option<Vec<String>>,
+    #[serde(default)]
     pub network: bool,
 }
 

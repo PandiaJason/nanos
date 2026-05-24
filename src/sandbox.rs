@@ -97,6 +97,65 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         len_to_copy as i32
     })?;
     
+    linker.func_wrap("env", "fs_write", |mut caller: Caller<'_, AgentState>, path_ptr: i32, path_len: i32, content_ptr: i32, content_len: i32, out_ptr: i32, out_max: i32| -> i32 {
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        
+        let mut path_bytes = vec![0u8; path_len as usize];
+        memory.read(&caller, path_ptr as usize, &mut path_bytes).unwrap();
+        let path = String::from_utf8_lossy(&path_bytes).to_string();
+        
+        let mut content_bytes = vec![0u8; content_len as usize];
+        memory.read(&caller, content_ptr as usize, &mut content_bytes).unwrap();
+        
+        info!("[MCP Syscall] 'fs_write' invoked for path: {}", path);
+        
+        let manifest = &caller.data().manifest;
+        let mut allowed = false;
+        if let Some(fs_write_rules) = &manifest.permissions.fs_write {
+            for rule in fs_write_rules {
+                if rule.ends_with("**") {
+                    let prefix = &rule[..rule.len()-2];
+                    if path.starts_with(prefix) { allowed = true; break; }
+                } else if rule.ends_with("*") {
+                    let prefix = &rule[..rule.len()-1];
+                    if path.starts_with(prefix) { allowed = true; break; }
+                } else if &path == rule {
+                    allowed = true;
+                    break;
+                }
+            }
+        }
+
+        let response = if !allowed {
+            info!("[Security] 'fs_write' blocked path: {}", path);
+            String::from("[Security] PERMISSION_DENIED")
+        } else {
+            match std::fs::write(&path, &content_bytes) {
+                Ok(_) => String::from("Successfully wrote to file."),
+                Err(e) => format!("Failed to write file: {}", e),
+            }
+        };
+        
+        let resp_bytes = response.as_bytes();
+        let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
+        
+        memory.write(&mut caller, out_ptr as usize, &resp_bytes[..len_to_copy]).unwrap();
+        
+        len_to_copy as i32
+    })?;
+
+    linker.func_wrap("env", "get_manifest_goal", |mut caller: Caller<'_, AgentState>, out_ptr: i32, out_max: i32| -> i32 {
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let goal = caller.data().manifest.goal.clone();
+        
+        let resp_bytes = goal.as_bytes();
+        let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
+        
+        memory.write(&mut caller, out_ptr as usize, &resp_bytes[..len_to_copy]).unwrap();
+        
+        len_to_copy as i32
+    })?;
+    
     linker.func_wrap("env", "web_get", |mut caller: Caller<'_, AgentState>, ptr: i32, len: i32, out_ptr: i32, out_max: i32| -> i32 {
         let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
         

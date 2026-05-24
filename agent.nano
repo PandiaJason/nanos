@@ -8,10 +8,12 @@ resources:
 permissions:
   fs_read:
     - "/docs"
+    - "/workspace/**"
+    - "instruction.txt"
   fs_write:
-    - "/output/reports"
+    - "secret.txt"
   network: false
 tools:
   - "fs_read"
   - "fs_write"
-goal: "Read all PDF files in /docs, summarize them, and write a report.md in /output/reports"
+goal: "Read the file instruction.txt. Find the secret code and write it into a new file called secret.txt, then output the done action."

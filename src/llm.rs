@@ -36,6 +36,7 @@ impl LlmEngine {
                 let mut ctx_params = llama_cpp_2::context::params::LlamaContextParams::default();
                 if let Some(nz) = core::num::NonZeroU32::new(context_window) {
                     ctx_params = ctx_params.with_n_ctx(Some(nz));
+                    ctx_params = ctx_params.with_n_batch(context_window);
                 }
                 
                 let mut ctx = model.new_context(&backend, ctx_params)
@@ -44,7 +45,7 @@ impl LlmEngine {
                 let tokens = model.str_to_token(&req.prompt, llama_cpp_2::model::AddBos::Always)
                     .expect("Failed to tokenize");
                     
-                let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(1024, 1);
+                let mut batch = llama_cpp_2::llama_batch::LlamaBatch::new(context_window as usize, 1);
                 
                 let last_index = (tokens.len() - 1) as i32;
                 for (i, token) in (0_i32..).zip(tokens.iter()) {
