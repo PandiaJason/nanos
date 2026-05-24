@@ -28,7 +28,7 @@ pub fn execute_sandbox(manifest: AgentManifest) -> Result<()> {
     
     let mut store = Store::new(&engine, AgentState {
         manifest: manifest.clone(),
-        llm: Some(LlmEngine::new(&manifest.model.path)?),
+        llm: Some(LlmEngine::new(&manifest.model.path, manifest.model.context_window)?),
     });
     
     info!("Sandbox configured and ready.");
@@ -61,10 +61,32 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         
         info!("[MCP Syscall] 'fs_read' invoked for path: {}", path);
         
-        let response = if path == "/docs" {
-            "The system requires memory isolation using WASM and an LLM running natively via llama.cpp for true zero-latency AI agents."
+        let manifest = &caller.data().manifest;
+        let mut allowed = false;
+        if let Some(fs_read_rules) = &manifest.permissions.fs_read {
+            for rule in fs_read_rules {
+                if rule.ends_with("**") {
+                    let prefix = &rule[..rule.len()-2];
+                    if path.starts_with(prefix) { allowed = true; break; }
+                } else if rule.ends_with("*") {
+                    let prefix = &rule[..rule.len()-1];
+                    if path.starts_with(prefix) { allowed = true; break; }
+                } else if &path == rule {
+                    allowed = true;
+                    break;
+                }
+            }
+        }
+
+        let response = if !allowed {
+            info!("[Security] 'fs_read' blocked path: {}", path);
+            String::from("[Security] PERMISSION_DENIED")
         } else {
-            "File not found."
+            if path == "/docs" {
+                String::from("The system requires memory isolation using WASM and an LLM running natively via llama.cpp for true zero-latency AI agents.")
+            } else {
+                String::from("File not found.")
+            }
         };
         
         let resp_bytes = response.as_bytes();
@@ -84,9 +106,16 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         
         info!("[MCP Syscall] 'web_get' invoked for url: {}", url);
         
-        let response_text = match ureq::get(&url).call() {
-            Ok(res) => res.into_string().unwrap_or_else(|_| "Failed to decode response".to_string()),
-            Err(e) => format!("HTTP Request failed: {}", e),
+        let manifest = &caller.data().manifest;
+        
+        let response_text = if !manifest.permissions.network {
+            info!("[Security] 'web_get' blocked network access for url: {}", url);
+            String::from("[Security] NETWORK_DISABLED_IN_MANIFEST")
+        } else {
+            match ureq::get(&url).call() {
+                Ok(res) => res.into_string().unwrap_or_else(|_| "Failed to decode response".to_string()),
+                Err(e) => format!("HTTP Request failed: {}", e),
+            }
         };
         
         let resp_bytes = response_text.as_bytes();
@@ -153,8 +182,8 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         memory.read(&caller, prompt_ptr as usize, &mut prompt_bytes).unwrap();
         let prompt = String::from_utf8_lossy(&prompt_bytes).to_string();
         
-        let state = caller.data_mut();
-        let response = if let Some(llm) = &mut state.llm {
+        let state = caller.data();
+        let response = if let Some(llm) = &state.llm {
             llm.infer(&prompt).unwrap_or_else(|_| "LLM Inference Error".to_string())
         } else {
             "LLM Engine not initialized".to_string()

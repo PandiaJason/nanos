@@ -6,30 +6,45 @@ extern "C" {
     fn llm_infer(prompt_ptr: *const u8, prompt_len: usize, out_ptr: *mut u8, out_max: usize) -> i32;
 }
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Deserialize, Debug)]
+struct ToolCall {
+    action: String,
+    args: String,
+}
+
 #[no_mangle]
 pub extern "C" fn run_agent() {
-    // 1. Store the secret securely in the host SQLite database via native FFI syscall
-    let secret = "The secret launch code is 42.";
-    unsafe {
-        memory_store(secret.as_ptr(), secret.len());
-    }
+    // SECURITY TEST: Attempt unauthorized web request
+    let url = "https://example.com";
+    let mut web_buf = [0u8; 1024];
+    let web_len = unsafe { web_get(url.as_ptr(), url.len(), web_buf.as_mut_ptr(), web_buf.len()) };
+    let web_resp = core::str::from_utf8(&web_buf[..web_len as usize]).unwrap_or("");
+    // The host should have intercepted this!
+
+    // SECURITY TEST: Attempt unauthorized file read
+    let path = "/etc/passwd";
+    let mut read_buf = [0u8; 1024];
+    let read_len = unsafe { fs_read(path.as_ptr(), path.len(), read_buf.as_mut_ptr(), read_buf.len()) };
+    let read_resp = core::str::from_utf8(&read_buf[..read_len as usize]).unwrap_or("");
+    // The host should have intercepted this too!
     
-    // 2. Recall the secret using a partial query string to prove SQL LIKE is operating
-    let query = "launch code";
-    let mut recall_buf = [0u8; 1024];
-    let recall_len = unsafe {
-        memory_recall(query.as_ptr(), query.len(), recall_buf.as_mut_ptr(), recall_buf.len())
-    };
-    let recalled_text = core::str::from_utf8(&recall_buf[..recall_len as usize]).unwrap_or("");
-    
-    // 3. Inject the retrieved memory into the LLM context to prove the loop works!
-    let mut context = String::from("<|system|>\nYou are an AI agent.\n<|user|>\nWhat is the secret launch code? You recalled this memory from SQLite: '");
-    context.push_str(recalled_text);
-    context.push_str("'\n<|assistant|>\n");
+    let system_prompt = "<|system|>\nYou are an AI agent. When you want to execute a tool, you MUST output a raw JSON object and nothing else.
+Allowed tools:
+- fs_read: reads a file. Args: absolute path.
+- web_get: fetches a URL. Args: the URL.
+
+Example output:
+{\"action\": \"fs_read\", \"args\": \"/workspace/report.txt\"}
+";
+
+    let mut context = String::from(system_prompt);
+    context.push_str("\n<|user|>\nRead the file /docs and summarize it.\n<|assistant|>\n");
     
     let mut out_buf = [0u8; 1024];
     
-    let _response_len = unsafe {
+    let response_len = unsafe {
         llm_infer(
             context.as_ptr(),
             context.len(),
@@ -37,4 +52,22 @@ pub extern "C" fn run_agent() {
             out_buf.len()
         )
     };
+    
+    let llm_output = core::str::from_utf8(&out_buf[..response_len as usize]).unwrap_or("").trim();
+    
+    if let Ok(tool_call) = serde_json::from_str::<ToolCall>(llm_output) {
+        if tool_call.action == "fs_read" {
+            let mut read_buf = [0u8; 1024];
+            let read_len = unsafe {
+                fs_read(tool_call.args.as_ptr(), tool_call.args.len(), read_buf.as_mut_ptr(), read_buf.len())
+            };
+            let _file_content = core::str::from_utf8(&read_buf[..read_len as usize]).unwrap_or("");
+            // In a real loop, we would append _file_content back to context and call llm_infer again.
+        } else if tool_call.action == "web_get" {
+            let mut web_buf = [0u8; 1024];
+            let _web_len = unsafe {
+                web_get(tool_call.args.as_ptr(), tool_call.args.len(), web_buf.as_mut_ptr(), web_buf.len())
+            };
+        }
+    }
 }
