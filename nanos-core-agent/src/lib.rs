@@ -34,40 +34,63 @@ pub extern "C" fn run_agent() {
 Allowed tools:
 - fs_read: reads a file. Args: absolute path.
 - web_get: fetches a URL. Args: the URL.
+- done: finishes the task. Args: result summary.
 
 Example output:
 {\"action\": \"fs_read\", \"args\": \"/workspace/report.txt\"}
 ";
 
     let mut context = String::from(system_prompt);
-    context.push_str("\n<|user|>\nRead the file /docs and summarize it.\n<|assistant|>\n");
+    context.push_str("\n<|user|>\nRead the file /etc/passwd and summarize it. If it fails, output done with 'Failed'.\n");
     
-    let mut out_buf = [0u8; 1024];
-    
-    let response_len = unsafe {
-        llm_infer(
-            context.as_ptr(),
-            context.len(),
-            out_buf.as_mut_ptr(),
-            out_buf.len()
-        )
-    };
-    
-    let llm_output = core::str::from_utf8(&out_buf[..response_len as usize]).unwrap_or("").trim();
-    
-    if let Ok(tool_call) = serde_json::from_str::<ToolCall>(llm_output) {
-        if tool_call.action == "fs_read" {
-            let mut read_buf = [0u8; 1024];
-            let read_len = unsafe {
-                fs_read(tool_call.args.as_ptr(), tool_call.args.len(), read_buf.as_mut_ptr(), read_buf.len())
-            };
-            let _file_content = core::str::from_utf8(&read_buf[..read_len as usize]).unwrap_or("");
-            // In a real loop, we would append _file_content back to context and call llm_infer again.
-        } else if tool_call.action == "web_get" {
-            let mut web_buf = [0u8; 1024];
-            let _web_len = unsafe {
-                web_get(tool_call.args.as_ptr(), tool_call.args.len(), web_buf.as_mut_ptr(), web_buf.len())
-            };
+    let mut step_count = 0;
+    loop {
+        if step_count > 5 { break; } // Safety limit
+        step_count += 1;
+        
+        context.push_str("<|assistant|>\n");
+        let mut out_buf = [0u8; 1024];
+        
+        let response_len = unsafe {
+            llm_infer(
+                context.as_ptr(),
+                context.len(),
+                out_buf.as_mut_ptr(),
+                out_buf.len()
+            )
+        };
+        
+        let llm_output = core::str::from_utf8(&out_buf[..response_len as usize]).unwrap_or("").trim();
+        context.push_str(llm_output);
+        context.push_str("\n");
+        
+        if let Ok(tool_call) = serde_json::from_str::<ToolCall>(llm_output) {
+            if tool_call.action == "done" {
+                break;
+            } else if tool_call.action == "fs_read" {
+                let mut read_buf = [0u8; 1024];
+                let read_len = unsafe {
+                    fs_read(tool_call.args.as_ptr(), tool_call.args.len(), read_buf.as_mut_ptr(), read_buf.len())
+                };
+                let file_content = core::str::from_utf8(&read_buf[..read_len as usize]).unwrap_or("");
+                context.push_str("<|observation|>\n");
+                context.push_str(file_content);
+                context.push_str("\n");
+            } else if tool_call.action == "web_get" {
+                let mut web_buf = [0u8; 1024];
+                let web_len = unsafe {
+                    web_get(tool_call.args.as_ptr(), tool_call.args.len(), web_buf.as_mut_ptr(), web_buf.len())
+                };
+                let web_resp = core::str::from_utf8(&web_buf[..web_len as usize]).unwrap_or("");
+                context.push_str("<|observation|>\n");
+                context.push_str(web_resp);
+                context.push_str("\n");
+            } else {
+                context.push_str("<|observation|>\nUnknown tool\n");
+            }
+        } else {
+            // Failed to parse JSON, nudge it back
+            context.push_str("<|observation|>\nError: Must output valid JSON matching ToolCall schema.\n");
         }
     }
 }

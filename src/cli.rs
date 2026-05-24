@@ -23,4 +23,9 @@ pub enum Commands {
         #[arg(default_value = "agent.nano")]
         manifest: PathBuf,
     },
+    /// Run a latency benchmark against the model using native FFI
+    Bench {
+        #[arg(default_value = "agent.nano")]
+        manifest: PathBuf,
+    },
 }
