@@ -75,33 +75,9 @@ flowchart TD
 
 Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolation. Tool calls pass raw memory pointers across the WASM boundary. A 1MB document and a 10-byte string cost exactly the same: **one pointer offset**.
 
-```mermaid
-graph TD
-    subgraph "nanos runtime (Rust binary, < 15MB RSS)"
-        A[WASM Sandbox<br/>wasmtime, fuel-metered] <-->|FFI Pointer Pass<br/>Zero Copy| B[LLM Engine<br/>llama.cpp, GPU offload, GGUF]
-        A -->|FFI Syscalls| C[Host Syscalls]
-    end
-    
-    subgraph "Host Syscalls"
-        C1[fs_read / fs_write]
-        C2[web_get]
-        C3[memory_store / memory_recall]
-        C4[mcp_call]
-        C5[eval_js]
-        C6[agent_send / agent_recv]
-    end
-    
-    C --> C1
-    C --> C2
-    C --> C3
-    C --> C4
-    C --> C5
-    C --> C6
-
-    style A fill:#2d3436,stroke:#74b9ff,stroke-width:2px,color:#fff
-    style B fill:#2d3436,stroke:#ff7675,stroke-width:2px,color:#fff
-    style C fill:#2d3436,stroke:#55efc4,stroke-width:2px,color:#fff
-```
+<p align="center">
+  <img src="assets/nanos_architecture.png" alt="nanos Architecture" width="600">
+</p>
 
 ---
 
