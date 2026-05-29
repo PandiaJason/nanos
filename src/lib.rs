@@ -6,7 +6,7 @@
 //! ```rust,no_run
 //! use nanos::{nanos_spawn, NanosConfig};
 //!
-//! let handle = nanos_spawn("agent.nano").expect("failed to spawn agent");
+//! let mut handle = nanos_spawn("agent.nano").expect("failed to spawn agent");
 //! handle.wait().expect("agent failed");
 //! println!("Traces: {:?}", handle.traces());
 //! ```
@@ -52,7 +52,7 @@ pub struct NanosHandle {
 
 impl NanosHandle {
     /// Block until the agent finishes execution.
-    pub fn wait(mut self) -> Result<()> {
+    pub fn wait(&mut self) -> Result<()> {
         if let Some(h) = self.handle.take() {
             h.join().map_err(|_| anyhow::anyhow!("Agent thread panicked"))??;
         }
@@ -94,7 +94,7 @@ impl NanosHandle {
 ///
 /// # Example
 /// ```rust,no_run
-/// let handle = nanos::nanos_spawn("agent.nano").unwrap();
+/// let mut handle = nanos::nanos_spawn("agent.nano").unwrap();
 /// handle.wait().unwrap();
 /// ```
 pub fn nanos_spawn(manifest_path: &str) -> Result<NanosHandle> {
@@ -130,8 +130,8 @@ pub fn nanos_spawn_with_config(manifest_path: &str, config: NanosConfig) -> Resu
 ///
 /// # Example
 /// ```rust,no_run
-/// let handles = nanos::nanos_spawn_fleet("fleet.nano").unwrap();
-/// for h in handles {
+/// let mut handles = nanos::nanos_spawn_fleet("fleet.nano").unwrap();
+/// for h in &mut handles {
 ///     h.wait().unwrap();
 /// }
 /// ```
