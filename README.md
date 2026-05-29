@@ -11,7 +11,9 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=for-the-badge" alt="License"></a>
   </p>
 
-  <img src="assets/nanos_dashboard_showcase.png" alt="nanos Visual Terminal Dashboard" width="800">
+  <br>
+  <img src="assets/nanos_logo.png" alt="nanos Logo" width="150">
+  <br>
 
   <p><i>single binary · zero python · zero docker · zero network overhead</i><br><b>just the agent, the weights, and the silicon.</b></p>
 </div>
