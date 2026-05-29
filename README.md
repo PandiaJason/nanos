@@ -15,14 +15,26 @@
   <img src="assets/nanos_logo.png" alt="nanos Logo" width="150">
   <br>
 
-  <p><i>single binary · zero python · zero docker · zero network overhead</i><br><b>just the agent, the weights, and the silicon.</b></p>
+  <p><i>📉 30x RAM Reduction (< 15MB RSS vs ~450MB) · ⚡ < 50ms Sandbox Boot · zero docker · zero python</i><br><b>just the agent, the weights, and the silicon.</b></p>
 </div>
+
+---
+
+## 🚨 Project Status: Research Prototype
+
+`nanos` is currently in active research and development. While the core sandboxing, memory-mapping, and local inference loop work flawlessly today, some features are experimental or undergoing active refactoring.
+
+| Status | Features | Notes |
+| :--- | :--- | :--- |
+| **✅ Active & Verified** | • Single-agent loop in WASM<br>• Apple Metal GPU offload<br>• Local GGUF & Ollama inference<br>• In-memory FFI syscalls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`) | Verified 100% locally with macOS GPU layers. |
+| **🔧 In Progress** | • Multi-agent fleet orchestration<br>• MCP tool proxy client (stdio JSON-RPC)<br>• Web HTTP client syscalls (`web_get`) | Fleet mode works locally via memory message bus; MCP is in active development. |
+| **📋 Planned Roadmap** | • Time-travel debugging GUI<br>• JS/TS Agent SDK compiler<br>• CUDA GPU backend for Linux servers | Currently compiling JS to WASM via Javy fallback. Full SDK upcoming. |
 
 ---
 
 ## 💡 What is nanos?
 
-**nanos** is a Rust-native, WebAssembly-powered micro-runtime for AI agents. It completely eliminates the bloated Python/Docker stack, booting agents in **< 50ms**, mapping LLM weights directly to your GPU (Metal/CUDA), and executing tools via zero-copy in-memory FFI syscalls instead of slow HTTP requests.
+**nanos** is a Rust-native, WebAssembly-powered micro-runtime for AI agents. By running agents inside a hardware-isolated WebAssembly sandbox (using Wasmtime), it drops the typical agent runtime footprint from **~450MB (Python/Docker) to < 15MB**, while completely removing network overhead during tool calling via in-memory FFI pointer passing.
 
 Whether you are running a single AI agent on your MacBook or scaling a fleet of 10,000 agents in a multi-tenant enterprise cloud cluster, **nanos** provides unparalleled speed, security, and efficiency.
 
@@ -186,7 +198,33 @@ cargo build --release
 cd nanos-core-agent && cargo build --target wasm32-unknown-unknown && cd ..
 ```
 
-### 2. Write Your Agent in JS/TS
+### 2. Run the Sandboxed Agent
+The repository comes with a pre-configured Rust-based agent core (`nanos-core-agent`) that handles reasoning, file operations, and completion.
+
+To run it, configure the agent goal in `agent.nano`:
+```yaml
+name: "nanos-agent"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:0.5b"
+goal: "Read the file instruction.txt, find the secret code inside it, and write ONLY the secret code into a new file called secret.txt. Then call done."
+```
+
+Create the input file:
+```bash
+echo "The secret code is: silicon-rules-123" > instruction.txt
+```
+
+Run the agent within the sandboxed runtime:
+```bash
+./target/release/nanos run agent.nano
+```
+
+Upon run, the engine will boot, load the compiled Rust agent WASM binary (`nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm`), and safely execute it. The final output will be written to `secret.txt`.
+
+### 3. (Planned) Writing Agents in JS/TS
+We are developing the `nanos-sdk` to write agents in JavaScript or TypeScript. Once released, the workflow will compile JS/TS straight to WASM using Javy:
+
 ```javascript
 import { fs, llm, agent } from 'nanos-sdk';
 
@@ -199,18 +237,9 @@ export async function run() {
 }
 ```
 
-### 3. Compile & Run!
 ```bash
-# Compile to WASM using nanos-sdk
+# Compile to WASM using nanos-sdk (under development)
 npx nanos-compile agent.js --out dist/agent.wasm --engine javy
-
-# Run it!
-./target/release/nanos run agent.nano
-```
-
-Need visual monitoring? Boot the dashboard:
-```bash
-nanos dashboard fleet.nano
 ```
 
 ---
