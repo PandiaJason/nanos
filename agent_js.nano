@@ -1,0 +1,15 @@
+name: "nanos-js-agent"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:0.5b"
+  context_window: 4096
+resources:
+  memory: "512MB"
+  max_steps: 10
+permissions:
+  fs_read:
+    - "instruction.txt"
+  fs_write:
+    - "secret.txt"
+binary: "dist/test_agent.wasm"
+goal: "Extract the secret key from instruction.txt and write it to secret.txt"

@@ -20,6 +20,7 @@ pub struct AgentManifest {
     pub goal: Option<String>,
     pub mcp_servers: Option<Vec<McpServerConfig>>,
     pub agents: Option<Vec<AgentSpec>>,
+    pub binary: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

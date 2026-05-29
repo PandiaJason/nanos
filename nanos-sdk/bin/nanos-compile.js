@@ -60,7 +60,7 @@ if (entryFile.endsWith('.ts') || entryFile.endsWith('.tsx')) {
   console.log('Detected TypeScript input, transpiling to JavaScript...');
   try {
     // Try esbuild first (fastest)
-    execSync(`npx -y esbuild ${entryFile} --bundle --format=esm --outfile=/tmp/nanos_compiled.js`, { stdio: 'pipe' });
+    execSync(`npx -y esbuild ${entryFile} --bundle --platform=node --format=esm --outfile=/tmp/nanos_compiled.js`, { stdio: 'pipe' });
     jsFile = '/tmp/nanos_compiled.js';
     console.log('  ✔ TypeScript transpiled via esbuild');
   } catch (e) {

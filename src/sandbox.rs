@@ -1,6 +1,9 @@
 use anyhow::Result;
 use tracing::{info, debug, error};
 use wasmtime::*;
+use serde_json::{json, Value};
+use std::process::{Command, Stdio};
+use std::io::{BufRead, BufReader, Write};
 
 use crate::manifest::AgentManifest;
 use crate::llm::LlmEngine;
@@ -80,7 +83,7 @@ pub fn execute_sandbox(
     let mut store = Store::new(&engine, AgentState {
         name: agent_name,
         manifest: manifest.clone(),
-        llm: Some(llm_engine),
+        llm: Some(llm_engine.clone()),
         traces: Vec::new(),
         mcp_clients,
         bus,
@@ -97,9 +100,31 @@ pub fn execute_sandbox(
     info!("Sandbox configured and ready.");
     
     // Load and execute the pre-compiled WASM module
-    let wasm_path = "nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm";
+    let default_wasm = "nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm".to_string();
+    let wasm_path = manifest.binary.as_ref().unwrap_or(&default_wasm);
     debug!("Loading WASM module from: {}", wasm_path);
-    let module = Module::from_file(&engine, wasm_path)?;
+    
+    // Read raw bytes to inspect for the JS bundle custom section
+    let wasm_bytes = std::fs::read(wasm_path)?;
+    if let Some(pos) = wasm_bytes.windows(15).position(|w| w == b"nanos_js_bundle") {
+        let js_bytes = &wasm_bytes[pos + 15..];
+        let js_code = String::from_utf8_lossy(js_bytes).to_string();
+        info!("Found packaged JavaScript agent bundle inside custom WASM section. Spawning Node.js FFI bridge...");
+        
+        let mcp_clients = store.data_mut().mcp_clients.drain(..).collect::<Vec<_>>();
+        let bus = store.data().bus.clone();
+        
+        run_js_agent(
+            &js_code, 
+            &manifest, 
+            Some(llm_engine),
+            mcp_clients,
+            bus
+        )?;
+        return Ok(());
+    }
+    
+    let module = Module::from_binary(&engine, &wasm_bytes)?;
         
     let instance = linker.instantiate(&mut store, &module)?;
     
@@ -584,13 +609,14 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         
         // Build sandboxed execution command:
         // - timeout 5s: kill process after 5 seconds
-        // - --experimental-permission: enable Node.js permission model (Node 20+)
+        // - permission flag: enable Node.js permission model (--permission or --experimental-permission)
         // - --no-warnings: suppress experimental warnings in output
         // - --allow-worker: allow Worker threads (needed for basic compute)
         // Without explicit --allow-fs-read, --allow-fs-write, --allow-child-process,
         // the permission model denies all filesystem, network, and child_process access.
+        let permission_flag = get_node_permission_flag();
         let output = std::process::Command::new("timeout")
-            .args(["5", "node", "--experimental-permission", "--no-warnings", "-e"])
+            .args(["5", "node", permission_flag, "--no-warnings", "-e"])
             .arg(&js_code)
             .env_clear()
             .env("NODE_NO_WARNINGS", "1")
@@ -621,8 +647,9 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
             }
             Err(e) => {
                 // Fallback: try without timeout command (not all systems have it)
+                let permission_flag = get_node_permission_flag();
                 let fallback = std::process::Command::new("node")
-                    .args(["--experimental-permission", "--no-warnings", "-e"])
+                    .args([permission_flag, "--no-warnings", "-e"])
                     .arg(&js_code)
                     .env_clear()
                     .env("NODE_NO_WARNINGS", "1")
@@ -661,4 +688,254 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
     })?;
     
     Ok(())
+}
+
+fn check_fs_read_permission(path: &str, manifest: &AgentManifest) -> bool {
+    if let Some(fs_read_rules) = &manifest.permissions.fs_read {
+        for rule in fs_read_rules {
+            if rule.ends_with("**") {
+                let prefix = &rule[..rule.len()-2];
+                if path.starts_with(prefix) { return true; }
+            } else if rule.ends_with("*") {
+                let prefix = &rule[..rule.len()-1];
+                if path.starts_with(prefix) { return true; }
+            } else if path == rule {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn check_fs_write_permission(path: &str, manifest: &AgentManifest) -> bool {
+    if let Some(fs_write_rules) = &manifest.permissions.fs_write {
+        for rule in fs_write_rules {
+            if rule.ends_with("**") {
+                let prefix = &rule[..rule.len()-2];
+                if path.starts_with(prefix) { return true; }
+            } else if rule.ends_with("*") {
+                let prefix = &rule[..rule.len()-1];
+                if path.starts_with(prefix) { return true; }
+            } else if path == rule {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn run_js_agent(
+    js_code: &str,
+    manifest: &AgentManifest,
+    llm: Option<std::sync::Arc<LlmEngine>>,
+    mcp_clients: Vec<crate::mcp_client::McpClient>,
+    bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
+) -> Result<()> {
+    let temp_js_path = "/tmp/nanos_agent_bundle.js";
+    std::fs::write(temp_js_path, js_code)?;
+    
+    info!("[JS Engine] Spawning Node.js sandbox...");
+    let permission_flag = get_node_permission_flag();
+    let mut child = Command::new("node")
+        .args([permission_flag, "--allow-fs-read=/tmp/*", "--allow-fs-read=/tmp", "--allow-fs-read=/private/tmp/*", "--allow-fs-read=/private/tmp", "--no-warnings", temp_js_path])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()?;
+        
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let reader = BufReader::new(stdout);
+    
+    let mut traces = Vec::new();
+    let mut step = 0u32;
+    
+    // Convert clients to a mutable reference or wrap
+    let mut mcp_clients_mut = mcp_clients;
+    
+    for line_result in reader.lines() {
+        let line = line_result?;
+        if line.trim().is_empty() { continue; }
+        
+        let request: Value = match serde_json::from_str(&line) {
+            Ok(v) => v,
+            Err(_) => {
+                info!("[JS Log] {}", line);
+                continue;
+            }
+        };
+        
+        let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
+        let params = request.get("params").and_then(|p| p.as_array());
+        let request_id = request.get("id").cloned().unwrap_or(Value::Null);
+        
+        let result = match method {
+            "fs_read" => {
+                let path = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
+                let allowed = check_fs_read_permission(path, manifest);
+                let res = if !allowed {
+                    info!("[Security] JS FFI 'fs_read' blocked path: {}", path);
+                    "[Security] PERMISSION_DENIED".to_string()
+                } else {
+                    std::fs::read_to_string(path).unwrap_or_else(|e| format!("Error reading file: {}", e))
+                };
+                step += 1;
+                record_js_trace(&mut traces, step, "fs_read", path, &res, &manifest.name);
+                json!(res)
+            }
+            "fs_write" => {
+                let path = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
+                let content = params.and_then(|p| p.get(1)).and_then(|v| v.as_str()).unwrap_or("");
+                let allowed = check_fs_write_permission(path, manifest);
+                let res = if !allowed {
+                    info!("[Security] JS FFI 'fs_write' blocked path: {}", path);
+                    "[Security] PERMISSION_DENIED".to_string()
+                } else {
+                    match std::fs::write(path, content.as_bytes()) {
+                        Ok(_) => "Successfully wrote to file.".to_string(),
+                        Err(e) => format!("Failed to write file: {}", e),
+                    }
+                };
+                step += 1;
+                record_js_trace(&mut traces, step, "fs_write", path, &res, &manifest.name);
+                json!(res)
+            }
+            "llm_infer" => {
+                let prompt = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
+                let res = match &llm {
+                    Some(engine) => match engine.infer(prompt) {
+                        Ok(r) => r.response,
+                        Err(e) => format!("LLM inference error: {}", e),
+                    },
+                    None => "LLM engine not loaded".to_string(),
+                };
+                step += 1;
+                record_js_trace(&mut traces, step, "llm_infer", prompt, &res, &manifest.name);
+                json!(res)
+            }
+            "get_manifest_goal" => {
+                let goal = manifest.goal.clone().unwrap_or_default();
+                json!(goal)
+            }
+            "done" => {
+                let summary = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("Done");
+                step += 1;
+                record_js_trace(&mut traces, step, "done", summary, "Finished", &manifest.name);
+                let response = json!({
+                    "jsonrpc": "2.0",
+                    "result": "Done",
+                    "id": request_id
+                });
+                let _ = writeln!(stdin, "{}", serde_json::to_string(&response)?);
+                let _ = stdin.flush();
+                break;
+            }
+            "web_get" => {
+                let url = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
+                let res = if !manifest.permissions.network {
+                    info!("[Security] JS FFI 'web_get' blocked network access for url: {}", url);
+                    "[Security] NETWORK_DISABLED_IN_MANIFEST".to_string()
+                } else {
+                    match ureq::get(url).call() {
+                        Ok(res) => res.into_string().unwrap_or_else(|_| "Failed to decode response".to_string()),
+                        Err(e) => format!("HTTP Request failed: {}", e),
+                    }
+                };
+                step += 1;
+                record_js_trace(&mut traces, step, "web_get", url, &res, &manifest.name);
+                json!(res)
+            }
+            "agent_send" => {
+                let target = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
+                let msg = params.and_then(|p| p.get(1)).and_then(|v| v.as_str()).unwrap_or("");
+                if let Some(ref message_bus) = bus {
+                    message_bus.send(target, msg.to_string());
+                    step += 1;
+                    record_js_trace(&mut traces, step, "agent_send", target, "Message sent", &manifest.name);
+                    json!("Message sent successfully.")
+                } else {
+                    json!("Error: MessageBus not loaded.")
+                }
+            }
+            "agent_recv" => {
+                let res = if let Some(ref message_bus) = bus {
+                    let agent_name = manifest.name.clone().unwrap_or_default();
+                    message_bus.recv(&agent_name).unwrap_or_else(|| "[No messages in queue]".to_string())
+                } else {
+                    "Error: MessageBus not loaded.".to_string()
+                };
+                step += 1;
+                record_js_trace(&mut traces, step, "agent_recv", &manifest.name.clone().unwrap_or_default(), &res, &manifest.name);
+                json!(res)
+            }
+            "mcp_call" => {
+                let server = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
+                let tool = params.and_then(|p| p.get(1)).and_then(|v| v.as_str()).unwrap_or("");
+                let arguments = params.and_then(|p| p.get(2)).cloned().unwrap_or(Value::Null);
+                
+                let mut res = "Error: MCP Server not found.".to_string();
+                if let Some(client) = mcp_clients_mut.iter_mut().find(|c| c.name == server) {
+                    match client.call_tool(tool, arguments) {
+                        Ok(content) => res = content,
+                        Err(e) => res = format!("MCP Error: {}", e),
+                    }
+                }
+                step += 1;
+                record_js_trace(&mut traces, step, "mcp_call", tool, &res, &manifest.name);
+                json!(res)
+            }
+            _ => json!(format!("Error: Unknown method '{}'", method)),
+        };
+        
+        let response = json!({
+            "jsonrpc": "2.0",
+            "result": result,
+            "id": request_id
+        });
+        writeln!(stdin, "{}", serde_json::to_string(&response)?)?;
+        stdin.flush()?;
+    }
+    
+    let _ = child.kill();
+    let _ = child.wait();
+    
+    crate::trace::print_trace_table(&traces);
+    Ok(())
+}
+
+fn record_js_trace(
+    traces: &mut Vec<crate::trace::AgentTrace>,
+    step: u32,
+    action: &str,
+    args: &str,
+    result: &str,
+    agent_name: &Option<String>,
+) {
+    let name = agent_name.clone().unwrap_or_else(|| "nanos-agent".to_string());
+    let latency = std::time::Duration::from_millis(0);
+    let trace = crate::trace::AgentTrace {
+        step,
+        action: action.to_string(),
+        args: args.to_string(),
+        tokens: "-".to_string(),
+        latency,
+        result: if result.len() > 30 { format!("{} B", result.len()) } else { result.to_string() },
+    };
+    crate::dashboard::update_agent(&name, "RUNNING", step, 1024);
+    crate::dashboard::log_event(format!("[Agent {}] JS-FFI: {} -> {}", name, action, trace.result));
+    crate::dashboard::add_trace(trace.clone());
+    traces.push(trace);
+}
+
+fn get_node_permission_flag() -> &'static str {
+    static FLAG: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    *FLAG.get_or_init(|| {
+        let output = std::process::Command::new("node")
+            .args(["--permission", "--version"])
+            .output();
+        match output {
+            Ok(out) if out.status.success() => "--permission",
+            _ => "--experimental-permission",
+        }
+    })
 }
