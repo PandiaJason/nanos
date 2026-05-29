@@ -11,6 +11,10 @@
 </p>
 
 <p align="center">
+  <img src="assets/nanos_dashboard_showcase.png" alt="nanos Visual Terminal Dashboard" width="700">
+</p>
+
+<p align="center">
   <b>single binary · zero python · zero docker · zero network overhead</b><br>
   <i>just the agent, the weights, and the silicon.</i>
 </p>
