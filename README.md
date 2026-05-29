@@ -26,9 +26,9 @@
 
 | Status | Features | Technical Justification & Current State |
 | :--- | :--- | :--- |
-| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal GPU Offload (macOS)**<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU mapping compile and run cleanly today. System calls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`) run entirely in-memory with zero network overhead. |
-| **🔧 In Progress** | • **Multi-Agent Fleet**<br>• **MCP stdio JSON-RPC Client**<br>• **Web Get Syscalls (`web_get`)** | Local thread-based fleet execution and message queues work, but distributed scaling is in progress. The MCP Client spawns and routes tool calls to JSON-RPC servers but lacks full spec hooks. `web_get` performs HTTP requests via the `ureq` crate but lacks stream parsing. |
-| **📋 Planned Roadmap** | • **Developer SDK (`nanos-sdk`)**<br>• **Time-Travel Debugger GUI**<br>• **Linux CUDA Backend** | The JS/TS agent compiler script works via Javy fallbacks locally, but a full NPM package is upcoming. The interactive time-travel debugger works in CLI mode inside the dashboard; a visual web GUI debugger is planned. Native CUDA GPU mapping for Linux is on the roadmap. |
+| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal GPU Offload (macOS)**<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** (`fs`, `llm`, `web`) <br>• **JS/TS SDK Compiler** | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU mapping compile and run cleanly today. System calls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`, `web_get`) run entirely in-memory with zero network overhead. JS/TS compilation via `nanos-compile.js` and Node sandbox dynamic permission routing is fully functional. |
+| **🔧 In Progress** | • **Multi-Agent Fleet Orchestration**<br>• **MCP stdio JSON-RPC Client** | Local thread-based fleet execution and message queues work, but distributed scaling is in progress. The MCP Client spawns and routes tool calls to JSON-RPC servers but lacks full spec hooks. |
+| **📋 Planned Roadmap** | • **NPM Registry Package (`nanos-sdk`)**<br>• **Time-Travel Debugger GUI**<br>• **Linux CUDA Backend** | Publishing `nanos-sdk` to NPM for easier global installation. The interactive time-travel debugger works in CLI mode inside the dashboard; a visual web GUI debugger is planned. Native CUDA GPU mapping for Linux is on the roadmap. |
 
 ---
 
@@ -183,6 +183,38 @@ If you want to view real-time fleet orchestration or play with the Time-Travel D
 ```
 
 Once execution finishes, choose a step index from the trace history to inject a mocked observation (e.g. mock a tool failure) and spawn a divergent execution replay!
+
+### 5. Write, Compile, and Run a JS/TS Agent (Optional)
+You can write your agents in TypeScript/JavaScript using our SDK. 
+
+Compile the provided `test_agent.ts` script into an encapsulated WASM dynamic bundle:
+```bash
+node nanos-sdk/bin/nanos-compile.js test_agent.ts --out dist/test_agent.wasm --engine bundle
+```
+
+Define the JS-based agent manifest (`agent_js.nano`):
+```yaml
+name: "nanos-js-agent"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:0.5b"
+  context_window: 4096
+resources:
+  memory: "512MB"
+  max_steps: 10
+permissions:
+  fs_read:
+    - "instruction.txt"
+  fs_write:
+    - "secret.txt"
+binary: "dist/test_agent.wasm"
+goal: "Extract the secret key from instruction.txt and write it to secret.txt"
+```
+
+Then run it:
+```bash
+./target/release/nanos run agent_js.nano
+```
 
 ---
 
