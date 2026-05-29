@@ -142,7 +142,7 @@ cd nanos-core-agent && cargo build --target wasm32-unknown-unknown && cd ..
 ```
 
 ### 2. Configure the Manifest
-Define the agent goal and model configuration in `agent.nano`:
+The example agent configuration is located in `examples/agent.nano`:
 
 ```yaml
 name: "nanos-agent"
@@ -156,8 +156,14 @@ resources:
 permissions:
   fs_read:
     - "instruction.txt"
+    - "/workspace/**"
   fs_write:
     - "secret.txt"
+    - "/workspace/**"
+  network: false
+tools:
+  - "fs_read"
+  - "fs_write"
 goal: "Read the file instruction.txt, find the secret code inside it, and write ONLY the secret code into a new file called secret.txt. Then call done."
 ```
 
@@ -170,7 +176,7 @@ echo "The secret code is: silicon-rules-123" > instruction.txt
 Execute the agent inside the sandboxed runtime:
 
 ```bash
-./target/release/nanos run agent.nano
+./target/release/nanos run examples/agent.nano
 ```
 
 Upon run, the engine will boot the sandbox, map model weights, load the compiled Rust agent binary (`nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm`), and safely execute it. The output will be written to `secret.txt`.
@@ -179,7 +185,7 @@ Upon run, the engine will boot the sandbox, map model weights, load the compiled
 If you want to view real-time fleet orchestration or play with the Time-Travel Debugger, launch the dashboard:
 
 ```bash
-./target/release/nanos dashboard fleet.nano
+./target/release/nanos dashboard examples/fleet.nano
 ```
 
 Once execution finishes, choose a step index from the trace history to inject a mocked observation (e.g. mock a tool failure) and spawn a divergent execution replay!
@@ -187,12 +193,12 @@ Once execution finishes, choose a step index from the trace history to inject a 
 ### 5. Write, Compile, and Run a JS/TS Agent (Optional)
 You can write your agents in TypeScript/JavaScript using our SDK. 
 
-Compile the provided `test_agent.ts` script into an encapsulated WASM dynamic bundle:
+Compile the provided `examples/test_agent.ts` script into an encapsulated WASM dynamic bundle:
 ```bash
-node nanos-sdk/bin/nanos-compile.js test_agent.ts --out dist/test_agent.wasm --engine bundle
+node nanos-sdk/bin/nanos-compile.js examples/test_agent.ts --out dist/test_agent.wasm --engine bundle
 ```
 
-Define the JS-based agent manifest (`agent_js.nano`):
+Define the JS-based agent manifest (`examples/agent_js.nano`):
 ```yaml
 name: "nanos-js-agent"
 model:
@@ -213,7 +219,7 @@ goal: "Extract the secret key from instruction.txt and write it to secret.txt"
 
 Then run it:
 ```bash
-./target/release/nanos run agent_js.nano
+./target/release/nanos run examples/agent_js.nano
 ```
 
 ---

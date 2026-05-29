@@ -1,4 +1,4 @@
-import { fs, llm, agent } from './nanos-sdk/index.js';
+import { fs, llm, agent } from '../nanos-sdk/index.js';
 
 export async function run() {
   console.log("TS Agent started!");
