@@ -13,6 +13,7 @@ pub struct AgentState {
     pub traces: Vec<crate::trace::AgentTrace>,
     pub mcp_clients: Vec<crate::mcp_client::McpClient>,
     pub bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
+    pub limiter: StoreLimits,
 }
 
 impl AgentState {
@@ -32,9 +33,9 @@ pub fn execute_sandbox(
 ) -> Result<()> {
     info!("Configuring Wasmtime Engine...");
     
-    // In production, we configure limits (memory, fuel) on the Config object here.
     let mut config = Config::new();
-    config.wasm_component_model(false); // We are using core wasm for now
+    config.wasm_component_model(false);
+    config.consume_fuel(true); // Enable fuel-based execution metering
     
     let engine = Engine::new(&config)?;
     
@@ -60,6 +61,22 @@ pub fn execute_sandbox(
         None => std::sync::Arc::new(LlmEngine::new(&manifest.model)?),
     };
     
+    // Parse resource limits from manifest
+    let memory_limit = manifest.resources.memory_bytes();
+    let fuel_budget = manifest.resources.fuel_budget();
+    info!(
+        "Resource limits: memory={} bytes ({}) | fuel={} (max_steps={})",
+        memory_limit, manifest.resources.memory, fuel_budget, manifest.resources.max_steps
+    );
+    
+    // Build store with resource limiter
+    let limiter = StoreLimitsBuilder::new()
+        .memory_size(memory_limit)
+        .table_elements(10_000)
+        .instances(1)
+        .memories(1)
+        .build();
+    
     let mut store = Store::new(&engine, AgentState {
         name: agent_name,
         manifest: manifest.clone(),
@@ -67,7 +84,15 @@ pub fn execute_sandbox(
         traces: Vec::new(),
         mcp_clients,
         bus,
+        limiter,
     });
+    
+    // Activate the resource limiter on this store
+    store.limiter(|state| &mut state.limiter);
+    
+    // Add fuel budget — agent execution will trap when fuel runs out
+    store.set_fuel(fuel_budget)?;
+    info!("Fuel budget of {} units loaded into sandbox.", fuel_budget);
     
     info!("Sandbox configured and ready.");
     
@@ -81,9 +106,24 @@ pub fn execute_sandbox(
     let run_agent = instance.get_typed_func::<(), ()>(&mut store, "run_agent")?;
     
     info!("Booting Agent Loop inside Sandbox...");
-    run_agent.call(&mut store, ())?;
+    match run_agent.call(&mut store, ()) {
+        Ok(()) => info!("Agent nano-process died cleanly."),
+        Err(e) => {
+            // Check if this was a fuel exhaustion trap
+            let remaining_fuel = store.get_fuel().unwrap_or(0);
+            if remaining_fuel == 0 {
+                info!("Agent terminated: fuel budget exhausted (max_steps={} reached).", manifest.resources.max_steps);
+            } else {
+                return Err(e.into());
+            }
+        }
+    }
     
-    info!("Agent nano-process died cleanly.");
+    // Report remaining fuel
+    if let Ok(remaining) = store.get_fuel() {
+        let used = fuel_budget.saturating_sub(remaining);
+        info!("Fuel consumed: {} / {} ({:.1}%)", used, fuel_budget, (used as f64 / fuel_budget as f64) * 100.0);
+    }
     
     // Print the trace table showing the execution details of the agent
     crate::trace::print_trace_table(&store.data().traces);
@@ -530,23 +570,74 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         memory.read(&caller, code_ptr as usize, &mut code_bytes).unwrap();
         let js_code = String::from_utf8_lossy(&code_bytes).to_string();
         
-        info!("[Sandbox E2B] 'eval_js' executing dynamic JS code...");
+        info!("[Sandbox eval_js] Executing sandboxed JS code ({} bytes)...", js_code.len());
         
-        // Execute under sandboxed Node process
-        let output = std::process::Command::new("node")
-            .arg("-e")
+        // Check if Node.js is available
+        let node_check = std::process::Command::new("node").arg("--version").output();
+        if node_check.is_err() {
+            let err_msg = "eval_js error: Node.js not found on host. Install Node.js >= 20 for sandboxed JS execution.";
+            let resp_bytes = err_msg.as_bytes();
+            let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
+            memory.write(&mut caller, out_ptr as usize, &resp_bytes[..len_to_copy]).unwrap();
+            return len_to_copy as i32;
+        }
+        
+        // Build sandboxed execution command:
+        // - timeout 5s: kill process after 5 seconds
+        // - --experimental-permission: enable Node.js permission model (Node 20+)
+        // - --no-warnings: suppress experimental warnings in output
+        // - --allow-worker: allow Worker threads (needed for basic compute)
+        // Without explicit --allow-fs-read, --allow-fs-write, --allow-child-process,
+        // the permission model denies all filesystem, network, and child_process access.
+        let output = std::process::Command::new("timeout")
+            .args(["5", "node", "--experimental-permission", "--no-warnings", "-e"])
             .arg(&js_code)
+            .env_clear()
+            .env("NODE_NO_WARNINGS", "1")
+            .env("HOME", "/tmp/nanos-sandbox") // Isolated HOME
             .output();
             
         let response = match output {
             Ok(out) => {
-                if out.status.success() {
+                let mut result = if out.status.success() {
                     String::from_utf8_lossy(&out.stdout).to_string()
                 } else {
-                    format!("JS Error: {}", String::from_utf8_lossy(&out.stderr))
+                    let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                    // Check for timeout (exit code 124 from timeout command)
+                    if out.status.code() == Some(124) {
+                        "eval_js error: Execution timed out (5s limit exceeded)".to_string()
+                    } else if stderr.contains("ERR_ACCESS_DENIED") {
+                        format!("eval_js sandbox violation: {}", stderr.lines().next().unwrap_or("Access denied"))
+                    } else {
+                        format!("JS Error: {}", stderr)
+                    }
+                };
+                // Cap output size to prevent memory abuse
+                if result.len() > 65536 {
+                    result.truncate(65536);
+                    result.push_str("\n[output truncated at 64KB]");
+                }
+                result
+            }
+            Err(e) => {
+                // Fallback: try without timeout command (not all systems have it)
+                let fallback = std::process::Command::new("node")
+                    .args(["--experimental-permission", "--no-warnings", "-e"])
+                    .arg(&js_code)
+                    .env_clear()
+                    .env("NODE_NO_WARNINGS", "1")
+                    .output();
+                match fallback {
+                    Ok(out) => {
+                        if out.status.success() {
+                            String::from_utf8_lossy(&out.stdout).to_string()
+                        } else {
+                            format!("JS Error: {}", String::from_utf8_lossy(&out.stderr))
+                        }
+                    }
+                    Err(e2) => format!("eval_js spawn error: {} (fallback: {})", e, e2),
                 }
             }
-            Err(e) => format!("Failed to spawn local JS engine (E2B sandbox error): {}", e),
         };
         
         let resp_bytes = response.as_bytes();

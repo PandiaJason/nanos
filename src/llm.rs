@@ -49,11 +49,24 @@ impl LlmEngine {
                 info!("Spawning dedicated LLM background thread for GGUF model: {}...", path);
                 thread::spawn(move || {
                     let backend = LlamaBackend::init().expect("Failed to initialize llama backend");
-                    let model_params = LlamaModelParams::default().with_n_gpu_layers(0);
+                    
+                    // Detect platform GPU capability and offload all layers if available
+                    let gpu_layers: u32 = if cfg!(target_os = "macos") {
+                        info!("Detected macOS — enabling Metal GPU offload (all layers)");
+                        99 // Offload all transformer layers to Apple Metal
+                    } else if cfg!(target_os = "linux") {
+                        info!("Detected Linux — attempting CUDA GPU offload (all layers)");
+                        99 // Offload all layers to CUDA (falls back to CPU if no GPU)
+                    } else {
+                        info!("No GPU acceleration available — running on CPU only");
+                        0
+                    };
+                    
+                    let model_params = LlamaModelParams::default().with_n_gpu_layers(gpu_layers);
                     let model = LlamaModel::load_from_file(&backend, &path, &model_params)
                         .expect("Failed to load model in background thread");
                         
-                    info!("Background thread: Model loaded successfully.");
+                    info!("Background thread: Model loaded with {} GPU layers offloaded.", gpu_layers);
                     
                     for req in rx {
                         info!("Background thread: LLM received native prompt from WASM queue.");

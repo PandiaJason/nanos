@@ -116,7 +116,7 @@ pub fn run_dashboard<P: AsRef<Path>>(manifest_path: P) -> Result<()> {
     }
 
     log_event("Dashboard initialized successfully.".to_string());
-    log_event("Loading qwen2.5-coder:0.5b weights onto Metal GPU...".to_string());
+    log_event("Loading model weights (GPU offload enabled on supported platforms)...".to_string());
 
     let shutdown_signal = Arc::new(AtomicBool::new(false));
     let draw_shutdown = shutdown_signal.clone();
@@ -191,15 +191,12 @@ pub fn run_dashboard<P: AsRef<Path>>(manifest_path: P) -> Result<()> {
             break;
         }
         if let Ok(step_idx) = trimmed.parse::<usize>() {
-            let traces_len = {
+            let (traces_len, traces_snapshot) = {
                 let s = state().lock().unwrap();
-                s.traces.len()
+                (s.traces.len(), s.traces.clone())
             };
             if step_idx > 0 && step_idx <= traces_len {
-                let trace = {
-                    let s = state().lock().unwrap();
-                    s.traces[step_idx - 1].clone()
-                };
+                let trace = &traces_snapshot[step_idx - 1];
                 println!("\n\x1B[38;2;34;211;238m--- Snapshot Step {} --- \x1B[0m", step_idx);
                 println!("Action:    {}", trace.action);
                 println!("Arguments: {}", trace.args);
@@ -212,9 +209,40 @@ pub fn run_dashboard<P: AsRef<Path>>(manifest_path: P) -> Result<()> {
                 std::io::stdin().read_line(&mut mock_buf)?;
                 let mock_trimmed = mock_buf.trim();
                 if !mock_trimmed.is_empty() {
-                    println!("\x1B[38;2;52;211;153mReplaying Agent starting from step {} with re-injected state observation: '{}'\x1B[0m", step_idx, mock_trimmed);
-                    thread::sleep(Duration::from_millis(1500));
-                    println!("Replay finished. New file written successfully.");
+                    println!("\x1B[38;2;52;211;153mReplaying agent from step {} with injected observation: '{}'\x1B[0m", step_idx, mock_trimmed);
+                    
+                    // Build a replay context from traces up to the divergence point
+                    let mut replay_context = String::from("REPLAY CONTEXT (prior execution trace):\n");
+                    for t in &traces_snapshot[..step_idx - 1] {
+                        replay_context.push_str(&format!(
+                            "  Step {}: {} ({}) -> {}\n", t.step, t.action, t.args, t.result
+                        ));
+                    }
+                    replay_context.push_str(&format!(
+                        "  Step {} [MODIFIED]: {} ({}) -> OBSERVATION OVERRIDDEN: {}\n",
+                        step_idx, trace.action, trace.args, mock_trimmed
+                    ));
+                    
+                    // Create a forked manifest with the replay context injected into the goal
+                    let mut replay_manifest = manifest.clone();
+                    let original_goal = replay_manifest.goal.clone().unwrap_or_default();
+                    replay_manifest.goal = Some(format!(
+                        "{}\n\n--- TIME-TRAVEL REPLAY ---\n{}\nContinue from step {} with the modified observation above.",
+                        original_goal, replay_context, step_idx
+                    ));
+                    replay_manifest.name = Some(format!("{}-replay", replay_manifest.name.unwrap_or_else(|| "agent".to_string())));
+                    
+                    // Re-run the sandbox with the forked manifest
+                    println!("\x1B[38;2;244;63;94mSpawning divergent execution branch...\x1B[0m");
+                    let replay_engine = Arc::new(LlmEngine::new(&replay_manifest.model)?);
+                    match crate::sandbox::execute_sandbox(replay_manifest, Some(replay_engine), None) {
+                        Ok(()) => {
+                            println!("\x1B[38;2;52;211;153m✔ Replay execution completed. Divergent branch finished.\x1B[0m");
+                        }
+                        Err(e) => {
+                            println!("\x1B[38;2;244;63;94m✘ Replay execution error: {:?}\x1B[0m", e);
+                        }
+                    }
                 }
             } else {
                 println!("Invalid step. Choose a step between 1 and {}", traces_len);

@@ -64,3 +64,26 @@ impl AgentManifest {
             .context("Failed to parse agent manifest YAML syntax")
     }
 }
+
+impl ResourceLimits {
+    /// Parse memory string like "256MB", "1GB", "512KB" into bytes.
+    pub fn memory_bytes(&self) -> usize {
+        let s = self.memory.trim().to_uppercase();
+        if let Some(val) = s.strip_suffix("GB") {
+            val.trim().parse::<usize>().unwrap_or(256) * 1024 * 1024 * 1024
+        } else if let Some(val) = s.strip_suffix("MB") {
+            val.trim().parse::<usize>().unwrap_or(256) * 1024 * 1024
+        } else if let Some(val) = s.strip_suffix("KB") {
+            val.trim().parse::<usize>().unwrap_or(256) * 1024
+        } else {
+            // Default to treating as MB
+            s.parse::<usize>().unwrap_or(256) * 1024 * 1024
+        }
+    }
+
+    /// Convert max_steps into wasmtime fuel units.
+    /// Each agent step ~= 100_000 fuel units (covers syscalls + memory ops).
+    pub fn fuel_budget(&self) -> u64 {
+        (self.max_steps as u64) * 100_000
+    }
+}

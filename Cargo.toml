@@ -2,6 +2,16 @@
 name = "nanos"
 version = "0.1.0"
 edition = "2024"
+description = "The AI-native WASM micro-runtime for sandboxed agents"
+license = "Apache-2.0"
+
+[lib]
+name = "nanos"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nanos"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.102"

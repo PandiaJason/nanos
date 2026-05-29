@@ -1,11 +1,4 @@
 mod cli;
-mod manifest;
-mod sandbox;
-mod llm;
-mod trace;
-mod mcp_client;
-mod orchestrator;
-mod dashboard;
 
 use anyhow::Result;
 use clap::Parser;
@@ -13,7 +6,7 @@ use tracing::{info, error, Level};
 use tracing_subscriber::FmtSubscriber;
 
 use cli::{Cli, Commands};
-use manifest::AgentManifest;
+use nanos::manifest::AgentManifest;
 
 fn main() -> Result<()> {
     // Initialize production-grade logging
@@ -36,7 +29,7 @@ fn main() -> Result<()> {
                     info!("Loaded Agent: {}", name);
                     info!("Goal: {}", goal);
                     
-                    if let Err(e) = sandbox::execute_sandbox(agent_manifest, None, None) {
+                    if let Err(e) = nanos::sandbox::execute_sandbox(agent_manifest, None, None) {
                         error!("Sandbox execution failed: {:?}", e);
                         std::process::exit(1);
                     }
@@ -52,13 +45,13 @@ fn main() -> Result<()> {
         }
         Commands::Orchestrate { manifest } => {
             info!("nanos orchestrating fleet...");
-            if let Err(e) = orchestrator::orchestrate(manifest) {
+            if let Err(e) = nanos::orchestrator::orchestrate(manifest) {
                 error!("Fleet orchestration failed: {:?}", e);
                 std::process::exit(1);
             }
         }
         Commands::Dashboard { manifest } => {
-            if let Err(e) = dashboard::run_dashboard(manifest) {
+            if let Err(e) = nanos::dashboard::run_dashboard(manifest) {
                 error!("Dashboard failed: {:?}", e);
                 std::process::exit(1);
             }
@@ -81,9 +74,9 @@ Example output:
                     let prompt = "Read the file /etc/passwd and summarize it. If it fails, output done with 'Failed'.";
                     let full_prompt = format!("<|system|>\n{}\n<|user|>\n{}\n<|assistant|>\n", system, prompt);
 
-                    let engine = llm::LlmEngine::new(&agent_manifest.model).unwrap();
+                    let engine = nanos::llm::LlmEngine::new(&agent_manifest.model).unwrap();
                     
-                    info!("Running warmup inference (compiling metal kernels)...");
+                    info!("Running warmup inference...");
                     let _ = engine.infer(&full_prompt).unwrap();
 
                     info!("Running timed benchmark inference...");
