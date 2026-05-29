@@ -22,21 +22,21 @@
 
 ## 🚨 Project Status: Research Prototype
 
-`nanos` is currently in active research and development. While the core sandboxing, memory-mapping, and local inference loop work flawlessly today, some features are experimental or undergoing active refactoring.
+`nanos` is currently in active research and development. To keep this project grounded and credible for developers, we draw an honest line between what is fully working today, what is currently in active development, and what is planned for the roadmap.
 
-| Status | Features | Notes |
+| Status | Features | Technical Justification & Current State |
 | :--- | :--- | :--- |
-| **✅ Active & Verified** | • Single-agent loop in WASM<br>• Apple Metal GPU offload<br>• Local GGUF & Ollama inference<br>• In-memory FFI syscalls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`) | Verified 100% locally with macOS GPU layers. |
-| **🔧 In Progress** | • Multi-agent fleet orchestration<br>• MCP tool proxy client (stdio JSON-RPC)<br>• Web HTTP client syscalls (`web_get`) | Fleet mode works locally via memory message bus; MCP is in active development. |
-| **📋 Planned Roadmap** | • Time-travel debugging GUI<br>• JS/TS Agent SDK compiler<br>• CUDA GPU backend for Linux servers | Currently compiling JS to WASM via Javy fallback. Full SDK upcoming. |
+| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal GPU Offload (macOS)**<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU mapping compile and run cleanly today. System calls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`) run entirely in-memory with zero network overhead. |
+| **🔧 In Progress** | • **Multi-Agent Fleet**<br>• **MCP stdio JSON-RPC Client**<br>• **Web Get Syscalls (`web_get`)** | Local thread-based fleet execution and message queues work, but distributed scaling is in progress. The MCP Client spawns and routes tool calls to JSON-RPC servers but lacks full spec hooks. `web_get` performs HTTP requests via the `ureq` crate but lacks stream parsing. |
+| **📋 Planned Roadmap** | • **Developer SDK (`nanos-sdk`)**<br>• **Time-Travel Debugger GUI**<br>• **Linux CUDA Backend** | The JS/TS agent compiler script works via Javy fallbacks locally, but a full NPM package is upcoming. The interactive time-travel debugger works in CLI mode inside the dashboard; a visual web GUI debugger is planned. Native CUDA GPU mapping for Linux is on the roadmap. |
 
 ---
 
 ## 💡 What is nanos?
 
-**nanos** is a Rust-native, WebAssembly-powered micro-runtime for AI agents. By running agents inside a hardware-isolated WebAssembly sandbox (using Wasmtime), it drops the typical agent runtime footprint from **~450MB (Python/Docker) to < 15MB**, while completely removing network overhead during tool calling via in-memory FFI pointer passing.
+**nanos** is a Rust-native, WebAssembly-powered micro-runtime for AI agents. By executing compiled agent binaries inside a hardware-isolated WebAssembly sandbox (Wasmtime), it cuts the typical runtime RAM footprint from **~450MB (Python/Docker) to < 15MB**, while booting the VM in **< 50ms**. 
 
-Whether you are running a single AI agent on your MacBook or scaling a fleet of 10,000 agents in a multi-tenant enterprise cloud cluster, **nanos** provides unparalleled speed, security, and efficiency.
+Rather than deploying agents as bloated virtual machines that talk to tools over HTTP, `nanos` executes tool calls via direct, in-memory **Foreign Function Interface (FFI) pointer passing**. The host and the agent share a zero-copy memory boundary, eliminating JSON serialization latency and local TCP socket overhead.
 
 ---
 
@@ -82,178 +82,120 @@ Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolati
 
 *qwen2.5-coder 0.5B on Apple M1 Pro, 24/24 Metal GPU layers offloaded:*
 
-| Stack | Cold Start | Warm Inference | RAM Footprint |
-|-------|------------|----------------|---------------|
-| ollama + python + docker | 29,562 ms | 1,166 ms | ~450 MB |
-| **nanos** | **12,420 ms** | **992 ms** | **< 15 MB** |
-| **Delta** | 🚀 **2.3x faster** | ⚡ **15% faster** | 📉 **30x smaller** |
+| Metric / Stack | ollama + python + docker | **nanos (WASM + FFI)** | **Delta** |
+| :--- | :---: | :---: | :---: |
+| **RAM Footprint** | ~450 MB | **< 15 MB** | 📉 **30x smaller** (Strongest Claim) |
+| **Cold Start** | 29,562 ms | **12,420 ms** | 🚀 **2.3x faster** |
+| **Warm Inference** | 1,166 ms | **992 ms** | ⚡ **15% faster** |
+
+*Note: RAM footprint excludes loaded LLM weights, measuring only the container/runtime overhead.*
 
 ---
 
-## ✨ Features That Devs Love
+## ✨ Features
 
-### 🔐 Hardware-Isolated WASM Sandbox
-Every agent runs inside a strict `wasmtime` sandbox:
-- **Linear memory isolation:** Agents cannot read host memory.
-- **Fuel metering:** Execution budget enforced directly at the VM level. No runaway Python while-loops.
-- **Memory caps:** `StoreLimits` strictly enforce max WASM heap from your manifest.
-- **Permission-gated syscalls:** `fs_read`, `fs_write`, `network` require explicit opt-in. Default is **DENY**.
+### 🔐 Hardware-Isolated WASM Sandbox (Working)
+Every agent runs inside a strict `wasmtime` store:
+- **Linear memory isolation:** Agents cannot access host memory beyond their sandbox bounds.
+- **Fuel metering:** Execution budget is enforced directly at the VM instruction level to prevent infinite loops.
+- **Memory caps:** `StoreLimits` enforce max WASM heap allocation from the manifest.
+- **Permission-gated syscalls:** `fs_read` and `fs_write` require explicit directory paths in your manifest. Everything else is **deny-by-default**.
 
-### 🎮 Real GPU Offload (Zero-Fake)
-Weights are memory-mapped directly onto **Apple Metal (macOS)** or **CUDA (Linux)** via `llama.cpp`'s native GPU layers. No fake logs. Real hardware acceleration.
+### 🎮 Apple Metal GPU Offload (Working)
+Model weights are memory-mapped directly onto macOS graphics hardware via `llama.cpp`'s native Metal GPU layers.
 
-### 🤖 Multi-Agent Fleet Orchestration
-Spawn a fleet of concurrent agents sharing a single LLM engine. Agents communicate via thread-safe message queues (`agent_send` / `agent_recv`). One GPU, many agents.
-```yaml
-agents:
-  - name: researcher
-    goal: "find the answer"
-    tools: [fs_read, web_get, llm_infer]
-  - name: writer
-    goal: "write the report"
-    tools: [fs_read, fs_write, llm_infer, agent_recv]
-```
+### 🤖 Multi-Agent Fleet Orchestration (In Progress)
+Orchestrate multiple agents concurrently sharing a single local `LlmEngine` instance. Agents communicate via thread-safe message queues.
+* **Current state:** Implemented locally using OS threads and a mutex-guarded `MessageBus` queue (`src/orchestrator.rs`).
+* **In progress:** Scaling this model to distributed nodes (e.g. over TCP/gRPC).
 
-### 🕰️ Time-Travel Debugger
-After execution, inspect any step's exact state and **replay from that point with modified observations**.
-```text
-[Time-Travel Debugger] Enter step number to snapshot/inspect state:
-> 3
---- Snapshot Step 3 ---
-Action:    fs_read
-Arguments: /workspace/data.csv
-Result:    4096 B
-Modify step observation -> [Enter new mocked observation]: "file not found"
-Replaying agent from step 3 with injected observation...
-Spawning divergent execution branch...
-✔ Replay execution completed. Divergent branch finished.
-```
-This is real re-execution, not a mocked simulation. The agent actually runs again with your modified context.
+### 🕰️ Time-Travel Debugger (Prototype CLI)
+Inspect any step's exact execution trace and replay the agent from that step with a modified environment or mock tool observations.
+* **Current state:** Accessible via an interactive text-based CLI terminal when running in `nanos dashboard` mode.
+* **In progress:** A web-based visual debugger interface.
 
-### 🔌 Universal MCP Tool Proxy
-`nanos` natively speaks the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Connect to standard JSON-RPC 2.0 tools with real child process management.
-```yaml
-mcp_servers:
-  - name: filesystem
-    command: npx
-    args: [-y, "@modelcontextprotocol/server-filesystem", "/workspace"]
-```
+### 🔌 Universal MCP Tool Proxy (In Progress)
+Bridge standard Model Context Protocol (MCP) servers straight to WASM.
+* **Current state:** Standard stdio JSON-RPC 2.0 communication is working (`src/mcp_client.rs`), spawning and managing server subprocesses.
+* **In progress:** Complete implementation of full protocol capabilities (prompts, resources, validation).
 
-### 🛡️ Sandboxed `eval_js`
-Execute dynamic JavaScript safely from within WASM using the Node.js `--experimental-permission` model. Filesystem, network, and child processes are denied by default. Execution is capped by timeouts and memory limits. No Docker needed.
-
-### 📦 Rust Embed Library
-Use `nanos` as a lightweight dependency in your own Rust apps!
-```rust
-use nanos::{nanos_spawn, nanos_spawn_fleet};
-
-// spawn a single agent
-let mut handle = nanos_spawn("agent.nano")?;
-handle.wait()?;
-println!("{:?}", handle.traces());
-
-// spawn a fleet
-let fleet = nanos_spawn_fleet("fleet.nano")?;
-for mut agent in fleet {
-    agent.wait()?;
-}
-```
-
----
-
-## ☁️ Enterprise Cloud Scaling (Why MNCs Care)
-
-`nanos` is designed to dominate in multi-tenant cloud environments. It easily outperforms Python/Docker when deploying AI at scale.
-
-1. **Extreme Scaling Density:** Traditional platforms spin up a Docker container or MicroVM (E2B) per agent, limiting you to 10–20 agents per server. With `nanos`, agents run in WASM. **Scale to 1,000+ concurrent agents per node.**
-2. **Weightless Serverless:** Decouple agent execution from LLM inference. Deploy `nanos` on cheap serverless nodes (AWS Lambda, GCP Cloud Run) connected to enterprise API providers (vLLM, OpenAI). Your production cloud container size? **< 5MB**.
-3. **Zero-Trust Multi-Tenancy:** Building a SaaS where users submit custom agent scripts? `nanos` isolates user code inside hardware-segmented WASM sandboxes, preventing cross-tenant attacks and resource exhaustion.
-4. **100% Air-Gapped Compliance:** For finance, healthcare, and defense. `nanos` is a single binary requiring zero internet access. Run private local models and MCP tools within a fully secured VPC.
-
----
-
-## 🛠️ Multi-Backend LLM Support
-
-Write your agent once. Switch backends by changing a single line in your `manifest.nano`.
-
-| Provider | Config | Notes |
-|----------|--------|-------|
-| **Local GGUF** | `provider: local`, `path: ./model.gguf` | Direct GPU inference via llama.cpp |
-| **Ollama** | `provider: ollama` | Uses `http://localhost:11434/v1` |
-| **OpenAI** | `provider: openai`, `api_key: sk-...` | Any OpenAI-compatible API (vLLM, Azure, etc.) |
+### 🛡️ Sandboxed `eval_js` Syscall (Working)
+WASM agents can execute dynamic JavaScript code safely via a dedicated host syscall.
+* **Current state:** Enforced via Node.js `--experimental-permission` flags, denying filesystem, network, and child process access by default. Capped by execution timeouts and memory heap limits.
 
 ---
 
 ## 🚀 Quick Start
 
 ### 1. Install & Build
+First, compile the `nanos` runtime and the core Rust-based agent WASM binary:
+
 ```bash
 # Clone the repository
 git clone https://github.com/PandiaJason/nanos && cd nanos
 
-# Build the runtime
+# Build the nanos runtime binary
 cargo build --release
 
-# Build the WASM agent core
+# Build the default Rust agent core into WebAssembly
 cd nanos-core-agent && cargo build --target wasm32-unknown-unknown && cd ..
 ```
 
-### 2. Run the Sandboxed Agent
-The repository comes with a pre-configured Rust-based agent core (`nanos-core-agent`) that handles reasoning, file operations, and completion.
+### 2. Configure the Manifest
+Define the agent goal and model configuration in `agent.nano`:
 
-To run it, configure the agent goal in `agent.nano`:
 ```yaml
 name: "nanos-agent"
 model:
   provider: "ollama"
   model_name: "qwen2.5-coder:0.5b"
+  context_window: 4096
+resources:
+  memory: "512MB"
+  max_steps: 10
+permissions:
+  fs_read:
+    - "instruction.txt"
+  fs_write:
+    - "secret.txt"
 goal: "Read the file instruction.txt, find the secret code inside it, and write ONLY the secret code into a new file called secret.txt. Then call done."
 ```
 
-Create the input file:
+Create a dummy input file:
 ```bash
 echo "The secret code is: silicon-rules-123" > instruction.txt
 ```
 
-Run the agent within the sandboxed runtime:
+### 3. Run the Agent
+Execute the agent inside the sandboxed runtime:
+
 ```bash
 ./target/release/nanos run agent.nano
 ```
 
-Upon run, the engine will boot, load the compiled Rust agent WASM binary (`nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm`), and safely execute it. The final output will be written to `secret.txt`.
+Upon run, the engine will boot the sandbox, map model weights, load the compiled Rust agent binary (`nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm`), and safely execute it. The output will be written to `secret.txt`.
 
-### 3. (Planned) Writing Agents in JS/TS
-We are developing the `nanos-sdk` to write agents in JavaScript or TypeScript. Once released, the workflow will compile JS/TS straight to WASM using Javy:
-
-```javascript
-import { fs, llm, agent } from 'nanos-sdk';
-
-export async function run() {
-  const goal = await agent.getGoal();
-  const data = await fs.readFile('input.txt');
-  const result = await llm.infer(`Analyze: ${data}`);
-  await fs.writeFile('output.txt', result);
-  await agent.done("Analysis complete.");
-}
-```
+### 4. Open the Interactive Dashboard & Debugger
+If you want to view real-time fleet orchestration or play with the Time-Travel Debugger, launch the dashboard:
 
 ```bash
-# Compile to WASM using nanos-sdk (under development)
-npx nanos-compile agent.js --out dist/agent.wasm --engine javy
+./target/release/nanos dashboard fleet.nano
 ```
+
+Once execution finishes, choose a step index from the trace history to inject a mocked observation (e.g. mock a tool failure) and spawn a divergent execution replay!
 
 ---
 
 ## 🆚 Why Not [X]?
 
 | Feature | `nanos` ⚡ | E2B | LangChain | Docker + Python |
-|---------|-----------|-----|-----------|-----------------|
+| :--- | :--- | :--- | :--- | :--- |
 | **Cold Start** | **< 50ms** | ~2s | ~3s | ~30s |
 | **RAM Overhead**| **< 15MB** | ~200MB | ~500MB | ~450MB |
-| **Isolation** | **WASM Hardware Isolation** | Cloud Container | None | Container |
-| **GPU Access** | **Direct Metal / CUDA** | ❌ | ❌ | Manual Setup |
-| **Air-Gapped** | **✅ Yes** | ❌ No | ❌ No | Partial |
-| **Binary Size** | **Single ~5MB binary** | N/A | `pip install` | `docker pull` |
+| **Sandbox** | **WASM isolation** | Cloud VM container | None | Host container |
+| **GPU Access** | **Direct Metal / CPU** | ❌ None | ❌ None | Manual setup |
+| **Air-Gapped** | **✅ Yes** | ❌ No (Cloud only) | ❌ No | Partial |
+| **Binary Size** | **Single ~15MB binary** | N/A | `pip install` | `docker pull` |
 
 ---
 
