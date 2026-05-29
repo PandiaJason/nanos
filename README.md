@@ -150,17 +150,23 @@ nanos kill <pid>
 ## What the MVP proves
 - [x] WASM sandbox boots and isolates agent code
 - [x] 23/23 LLM layers offloaded to Metal GPU automatically
-- [x] `fs_read` works as a native in-memory syscall
+- [x] `fs_read` and `fs_write` work as native in-memory syscalls with path-prefix security
 - [x] `llm_infer` crosses the WASM boundary with pointer semantics
-- [x] Full loop runs: read → infer → output → clean exit
-- [x] Zero network requests in the critical path
+- [x] Full ReAct step loop runs cleanly inside WASM
+- [x] Multi-agent orchestration fleet with thread concurrency and blocking message queues
+- [x] Real-time visual terminal dashboard and time-travel debugger console
+- [x] Sandboxed dynamic JS interpreter FFI syscall (`eval_js`)
 
 ## Roadmap
 - [x] Multi-step ReAct loop with N tool calls
 - [x] `web_get` syscall (HTTP fetch, sandboxed to allowlist)
 - [x] `memory_store` / `memory_recall` (sqlite native built-in memory store)
+- [x] Multi-backend flexibility (local, openai, ollama)
+- [x] Dynamic stdio-based MCP client integration proxy
+- [x] Concurrent multi-agent orchestration fleet (`nanos orchestrate`)
+- [x] Interactive Terminal Dashboard & Time-Travel Debugger (`nanos dashboard`)
+- [x] JS Sandbox interpreter (`eval_js`) and compilation toolchain (`nanos-sdk`)
 - [ ] `agent.nano` manifest enforces cgroup RAM limits
-- [ ] Fleet mode: `nanos fleet --workers 8 --each agent.nano`
 - [ ] Linux + x86 cross-platform (currently Mac / Metal)
 - [ ] Larger models: 7B, 13B with quantization
 - [ ] Rust embed API: `nanos_spawn()` for library use
