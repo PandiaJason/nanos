@@ -42,32 +42,9 @@ Every arrow represents latency, memory consumption, and a larger attack surface.
 
 One binary. One process. No network. No serialization tax.
 
-```mermaid
-flowchart TD
-    subgraph "❌ Traditional Stack (Slow & Bloated)"
-        direction LR
-        A1[Docker<br>200MB] -->|Latency| A2[Python<br>2s boot]
-        A2 -->|Network| A3[MCP Server<br>HTTP]
-        A3 -->|JSON Parse| A4[LLM API<br>TCP Socket]
-    end
-
-    subgraph "⚡ nanos Stack (Instant & Native)"
-        direction LR
-        B1[nanos run<br>agent.nano] -->|< 50ms boot| B2[WASM Sandbox]
-        B2 -->|memory-mapped| B3[GPU Weights]
-        B3 -->|zero-copy| B4[FFI Tool Calls]
-    end
-
-    style A1 fill:#ff7675,color:#2d3436,stroke:none
-    style A2 fill:#ff7675,color:#2d3436,stroke:none
-    style A3 fill:#ff7675,color:#2d3436,stroke:none
-    style A4 fill:#ff7675,color:#2d3436,stroke:none
-
-    style B1 fill:#55efc4,color:#2d3436,stroke:none
-    style B2 fill:#55efc4,color:#2d3436,stroke:none
-    style B3 fill:#55efc4,color:#2d3436,stroke:none
-    style B4 fill:#55efc4,color:#2d3436,stroke:none
-```
+<p align="center">
+  <img src="assets/nanos_stack_comparison.png" alt="nanos Stack Comparison" width="750">
+</p>
 
 ---
 
@@ -76,7 +53,7 @@ flowchart TD
 Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolation. Tool calls pass raw memory pointers across the WASM boundary. A 1MB document and a 10-byte string cost exactly the same: **one pointer offset**.
 
 <p align="center">
-  <img src="assets/nanos_architecture.png" alt="nanos Architecture" width="600">
+  <img src="assets/nanos_architecture.png" alt="nanos Architecture" width="750">
 </p>
 
 ---
