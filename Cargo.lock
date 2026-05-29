@@ -1223,6 +1223,7 @@ dependencies = [
  "llama-cpp-2",
  "rusqlite",
  "serde",
+ "serde_json",
  "serde_yaml",
  "tokio",
  "tracing",
@@ -2048,6 +2049,8 @@ dependencies = [
  "once_cell",
  "rustls",
  "rustls-pki-types",
+ "serde",
+ "serde_json",
  "url",
  "webpki-roots 0.26.11",
 ]

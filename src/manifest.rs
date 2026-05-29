@@ -4,19 +4,39 @@ use std::fs;
 use std::path::Path;
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct AgentManifest {
+pub struct AgentSpec {
     pub name: String,
+    pub goal: String,
+    pub tools: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct AgentManifest {
+    pub name: Option<String>,
     pub model: ModelConfig,
     pub resources: ResourceLimits,
     pub permissions: Permissions,
-    pub tools: Vec<String>,
-    pub goal: String,
+    pub tools: Option<Vec<String>>,
+    pub goal: Option<String>,
+    pub mcp_servers: Option<Vec<McpServerConfig>>,
+    pub agents: Option<Vec<AgentSpec>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct McpServerConfig {
+    pub name: String,
+    pub command: String,
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ModelConfig {
-    pub path: String,
+    pub path: Option<String>,
     pub context_window: u32,
+    pub provider: Option<String>,
+    pub api_url: Option<String>,
+    pub api_key: Option<String>,
+    pub model_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

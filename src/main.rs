@@ -2,6 +2,9 @@ mod cli;
 mod manifest;
 mod sandbox;
 mod llm;
+mod trace;
+mod mcp_client;
+mod orchestrator;
 
 use anyhow::Result;
 use clap::Parser;
@@ -27,10 +30,12 @@ fn main() -> Result<()> {
             
             match AgentManifest::load_from_file(manifest) {
                 Ok(agent_manifest) => {
-                    info!("Loaded Agent: {}", agent_manifest.name);
-                    info!("Goal: {}", agent_manifest.goal);
+                    let name = agent_manifest.name.as_deref().unwrap_or("nanos-agent");
+                    let goal = agent_manifest.goal.as_deref().unwrap_or("No goal specified");
+                    info!("Loaded Agent: {}", name);
+                    info!("Goal: {}", goal);
                     
-                    if let Err(e) = sandbox::execute_sandbox(agent_manifest) {
+                    if let Err(e) = sandbox::execute_sandbox(agent_manifest, None, None) {
                         error!("Sandbox execution failed: {:?}", e);
                         std::process::exit(1);
                     }
@@ -44,11 +49,18 @@ fn main() -> Result<()> {
         Commands::Serve { manifest: _ } => {
             info!("Server mode not yet implemented.");
         }
+        Commands::Orchestrate { manifest } => {
+            info!("nanos orchestrating fleet...");
+            if let Err(e) = orchestrator::orchestrate(manifest) {
+                error!("Fleet orchestration failed: {:?}", e);
+                std::process::exit(1);
+            }
+        }
         Commands::Bench { manifest } => {
             info!("nanos benchmark mode...");
             match AgentManifest::load_from_file(manifest) {
                 Ok(agent_manifest) => {
-                    info!("Loaded Agent Model for Benchmark: {}", agent_manifest.model.path);
+                    info!("Loaded Agent Model for Benchmark: {:?}", agent_manifest.model.path);
                     
                     let system = "You are an AI agent. When you want to execute a tool, you MUST output a raw JSON object and nothing else.
 Allowed tools:
@@ -62,7 +74,7 @@ Example output:
                     let prompt = "Read the file /etc/passwd and summarize it. If it fails, output done with 'Failed'.";
                     let full_prompt = format!("<|system|>\n{}\n<|user|>\n{}\n<|assistant|>\n", system, prompt);
 
-                    let engine = llm::LlmEngine::new(&agent_manifest.model.path, agent_manifest.model.context_window).unwrap();
+                    let engine = llm::LlmEngine::new(&agent_manifest.model).unwrap();
                     
                     info!("Running warmup inference (compiling metal kernels)...");
                     let _ = engine.infer(&full_prompt).unwrap();
@@ -73,7 +85,7 @@ Example output:
                     let elapsed = start.elapsed();
                     
                     println!("✅ FFI Inference completed in: {:.2?}", elapsed);
-                    println!("Output length: {} bytes", response.len());
+                    println!("Output length: {} bytes", response.response.len());
                 }
                 Err(e) => {
                     error!("Failed to initialize agent: {:?}", e);

@@ -1,0 +1,23 @@
+name: "nanos-fleet"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:0.5b"
+  context_window: 4096
+resources:
+  memory: "4gb"
+  max_steps: 10
+permissions:
+  fs_read:
+    - "instruction.txt"
+    - "/workspace/**"
+  fs_write:
+    - "secret.txt"
+    - "/workspace/**"
+  network: false
+agents:
+  - name: "researcher"
+    goal: "Read the file instruction.txt, find the secret code inside it, and send the secret code to agent 'writer' using agent_send. Then call done."
+    tools: ["fs_read", "agent_send", "done"]
+  - name: "writer"
+    goal: "Call agent_recv to read the message from 'researcher'. Once you receive the message containing the secret code, write ONLY the secret code to secret.txt, and call done."
+    tools: ["fs_write", "agent_recv", "done"]

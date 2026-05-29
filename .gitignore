@@ -1,2 +1,5 @@
 /target
 models/
+nanos-core-agent/target/
+secret.txt
+ollama.log

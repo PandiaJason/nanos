@@ -28,4 +28,9 @@ pub enum Commands {
         #[arg(default_value = "agent.nano")]
         manifest: PathBuf,
     },
+    /// Orchestrate a multi-agent fleet from a manifest
+    Orchestrate {
+        #[arg(default_value = "fleet.nano")]
+        manifest: PathBuf,
+    },
 }
