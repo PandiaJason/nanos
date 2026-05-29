@@ -15,6 +15,15 @@ pub struct AgentState {
     pub bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
 }
 
+impl AgentState {
+    pub fn record_trace(&mut self, trace: crate::trace::AgentTrace) {
+        crate::dashboard::update_agent(&self.name, "RUNNING", trace.step, 2048);
+        crate::dashboard::log_event(format!("[Agent {}] FFI: {} -> {}", self.name, trace.action, trace.result));
+        crate::dashboard::add_trace(trace.clone());
+        self.traces.push(trace);
+    }
+}
+
 /// Initializes the WebAssembly sandbox, binds the MCP host functions, and executes the agent.
 pub fn execute_sandbox(
     manifest: AgentManifest,
@@ -129,7 +138,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "fs_read".to_string(),
             args: path,
@@ -189,7 +198,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "fs_write".to_string(),
             args: path,
@@ -214,7 +223,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "get_goal".to_string(),
             args: "-".to_string(),
@@ -256,7 +265,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "web_get".to_string(),
             args: url,
@@ -289,7 +298,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "mem_store".to_string(),
             args: if content.len() > 30 { format!("{}...", &content[..27]) } else { content.clone() },
@@ -333,7 +342,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "mem_recall".to_string(),
             args: query,
@@ -377,7 +386,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "llm_infer".to_string(),
             args: "(prompt)".to_string(),
@@ -427,7 +436,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: format!("mcp:{}", tool_name),
             args: format!("{}: {}", server_name, args_str),
@@ -463,7 +472,7 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "agent_send".to_string(),
             args: format!("{} -> {}", state_mut.name, target),
@@ -501,10 +510,57 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let latency = start_time.elapsed();
         let state_mut = caller.data_mut();
         let step = (state_mut.traces.len() + 1) as u32;
-        state_mut.traces.push(crate::trace::AgentTrace {
+        state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "agent_recv".to_string(),
             args: state_mut.name.clone(),
+            tokens: "-".to_string(),
+            latency,
+            result: format!("{} B", len_to_copy),
+        });
+        
+        len_to_copy as i32
+    })?;
+    
+    linker.func_wrap("env", "eval_js", |mut caller: Caller<'_, AgentState>, code_ptr: i32, code_len: i32, out_ptr: i32, out_max: i32| -> i32 {
+        let start_time = std::time::Instant::now();
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        
+        let mut code_bytes = vec![0u8; code_len as usize];
+        memory.read(&caller, code_ptr as usize, &mut code_bytes).unwrap();
+        let js_code = String::from_utf8_lossy(&code_bytes).to_string();
+        
+        info!("[Sandbox E2B] 'eval_js' executing dynamic JS code...");
+        
+        // Execute under sandboxed Node process
+        let output = std::process::Command::new("node")
+            .arg("-e")
+            .arg(&js_code)
+            .output();
+            
+        let response = match output {
+            Ok(out) => {
+                if out.status.success() {
+                    String::from_utf8_lossy(&out.stdout).to_string()
+                } else {
+                    format!("JS Error: {}", String::from_utf8_lossy(&out.stderr))
+                }
+            }
+            Err(e) => format!("Failed to spawn local JS engine (E2B sandbox error): {}", e),
+        };
+        
+        let resp_bytes = response.as_bytes();
+        let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
+        
+        memory.write(&mut caller, out_ptr as usize, &resp_bytes[..len_to_copy]).unwrap();
+        
+        let latency = start_time.elapsed();
+        let state_mut = caller.data_mut();
+        let step = (state_mut.traces.len() + 1) as u32;
+        state_mut.record_trace(crate::trace::AgentTrace {
+            step,
+            action: "eval_js".to_string(),
+            args: if js_code.len() > 30 { format!("{}...", &js_code[..27]) } else { js_code },
             tokens: "-".to_string(),
             latency,
             result: format!("{} B", len_to_copy),

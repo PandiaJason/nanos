@@ -1,0 +1,20 @@
+{
+  "name": "nanos-sdk",
+  "version": "1.0.0",
+  "description": "SDK and toolchain to compile TypeScript/JavaScript AI Agents into optimized, secure WASM binaries for nanos OS",
+  "main": "index.js",
+  "bin": {
+    "nanos-compile": "./bin/nanos-compile.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 0"
+  },
+  "dependencies": {
+    "binaryen": "^112.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "author": "Google DeepMind team & PandiaJason",
+  "license": "Apache-2.0"
+}

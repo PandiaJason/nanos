@@ -14,6 +14,7 @@ extern "C" {
     ) -> i32;
     fn agent_send(target_ptr: *const u8, target_len: usize, msg_ptr: *const u8, msg_len: usize) -> i32;
     fn agent_recv(out_ptr: *mut u8, out_max: usize) -> i32;
+    fn eval_js(code_ptr: *const u8, code_len: usize, out_ptr: *mut u8, out_max: usize) -> i32;
 }
 
 use serde::Deserialize;
@@ -208,6 +209,17 @@ fn dispatch_tool(tc: &ToolCall) -> String {
                     .to_string()
             } else {
                 "[No messages in queue]".to_string()
+            }
+        }
+        "eval_js" => {
+            if let Some(code) = tc.args.as_str() {
+                let mut buf = [0u8; 8192];
+                let len = unsafe { eval_js(code.as_ptr(), code.len(), buf.as_mut_ptr(), buf.len()) };
+                core::str::from_utf8(&buf[..len as usize])
+                    .unwrap_or("[Error executing JS]")
+                    .to_string()
+            } else {
+                "[Error]: eval_js args must be a string (JS code).".to_string()
             }
         }
         _ => format!("[Error]: Unknown action '{}'.", tc.action),

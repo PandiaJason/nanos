@@ -33,4 +33,9 @@ pub enum Commands {
         #[arg(default_value = "fleet.nano")]
         manifest: PathBuf,
     },
+    /// View real-time agent execution status and Time-Travel debug console
+    Dashboard {
+        #[arg(default_value = "fleet.nano")]
+        manifest: PathBuf,
+    },
 }

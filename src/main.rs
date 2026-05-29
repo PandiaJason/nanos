@@ -5,6 +5,7 @@ mod llm;
 mod trace;
 mod mcp_client;
 mod orchestrator;
+mod dashboard;
 
 use anyhow::Result;
 use clap::Parser;
@@ -53,6 +54,12 @@ fn main() -> Result<()> {
             info!("nanos orchestrating fleet...");
             if let Err(e) = orchestrator::orchestrate(manifest) {
                 error!("Fleet orchestration failed: {:?}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Dashboard { manifest } => {
+            if let Err(e) = dashboard::run_dashboard(manifest) {
+                error!("Dashboard failed: {:?}", e);
                 std::process::exit(1);
             }
         }
