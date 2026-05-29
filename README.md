@@ -78,15 +78,7 @@ One binary. One process. No network. No serialization tax.
 Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolation. Tool calls pass raw memory pointers across the WASM boundary. A 1MB document and a 10-byte string cost exactly the same: **one pointer offset**.
 
 <p align="center">
-  <b>High-Level Platform Overview</b><br>
-  <img src="assets/nanos_architecture_overview.png" alt="nanos Architecture Overview" width="750">
-</p>
-
-<br>
-
-<p align="center">
-  <b>Detailed Runtime Architecture</b><br>
-  <img src="assets/nanos_architecture_detail.png" alt="nanos Detailed Architecture" width="750">
+  <img src="assets/nanos_architecture_detail.png" alt="nanos Architecture" width="750">
 </p>
 
 ---
