@@ -4,8 +4,7 @@
   <p><b>The lightweight, secure, and ultra-fast WebAssembly micro-runtime for AI agents.</b></p>
 
   <p>
-    <a href="https://github.com/PandiaJason/nanos/actions"><img src="https://img.shields.io/badge/build-passing-success?style=for-the-badge&logo=github" alt="Build Status"></a>
-    <a href="https://crates.io/crates/nanos"><img src="https://img.shields.io/badge/crates.io-v0.1.0-orange?style=for-the-badge&logo=rust" alt="Rust Crates"></a>
+    <a href="https://github.com/PandiaJason/nanos/actions"><img src="https://github.com/PandiaJason/nanos/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
     <a href="https://webassembly.org/"><img src="https://img.shields.io/badge/runtime-WASM-blueviolet?style=for-the-badge&logo=webassembly" alt="WASM"></a>
     <img src="https://img.shields.io/badge/sandbox-hardware--isolated-00cc88?style=for-the-badge" alt="Sandboxed">
     <img src="https://img.shields.io/badge/GPU-Metal%20%2F%20CUDA-ff6b6b?style=for-the-badge" alt="GPU">
@@ -199,6 +198,10 @@ Notifies the host that the agent has accomplished its goal and supplies an execu
 Ensure you have the following installed on your host:
 * Rust & Cargo (MSRV 1.75+)
 * Node.js (v18+ for compiling, v20+ with permission support is recommended for the JS sandbox runner)
+* **Ollama** running locally. Pull the target LLM model before running the agent:
+  ```bash
+  ollama pull qwen2.5-coder:0.5b
+  ```
 
 ### 2. Build the Nanos Engine
 Clone and compile the native runtime binary:
