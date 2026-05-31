@@ -1,0 +1,21 @@
+name: "mcp-test-agent"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:1.5b"
+  context_window: 4096
+resources:
+  memory: "4gb"
+  max_steps: 10
+permissions:
+  fs_write:
+    - "mcp_output.txt"
+  network: false
+mcp_servers:
+  - name: "ping-server"
+    command: "node"
+    args:
+      - "/Users/admin/.gemini/antigravity/brain/ffba3217-db0e-4019-af5a-30fc5e4fdde8/scratch/mcp_ping_server.js"
+tools:
+  - "mcp_call"
+  - "fs_write"
+goal: "Call the external MCP tool 'ping' on the server 'ping-server' with argument 'hello_world'. Write the response text exactly to mcp_output.txt, then call done."

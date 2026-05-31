@@ -34,6 +34,7 @@ pub fn execute_sandbox(
     llm: Option<std::sync::Arc<LlmEngine>>,
     bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
 ) -> Result<()> {
+    let sandbox_boot_start = std::time::Instant::now();
     info!("Configuring Wasmtime Engine...");
     
     let mut config = Config::new();
@@ -97,10 +98,15 @@ pub fn execute_sandbox(
     store.set_fuel(fuel_budget)?;
     info!("Fuel budget of {} units loaded into sandbox.", fuel_budget);
     
-    info!("Sandbox configured and ready.");
+    let sandbox_boot_elapsed = sandbox_boot_start.elapsed();
+    info!("Sandbox configured and ready. Boot time: {:.2?}", sandbox_boot_elapsed);
     
     // Load and execute the pre-compiled WASM module
-    let default_wasm = "nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm".to_string();
+    let default_wasm = if std::path::Path::new("nanos-core-agent/target/wasm32-unknown-unknown/release/nanos_core_agent.wasm").exists() {
+        "nanos-core-agent/target/wasm32-unknown-unknown/release/nanos_core_agent.wasm".to_string()
+    } else {
+        "nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm".to_string()
+    };
     let wasm_path = manifest.binary.as_ref().unwrap_or(&default_wasm);
     debug!("Loading WASM module from: {}", wasm_path);
     
@@ -152,6 +158,9 @@ pub fn execute_sandbox(
     
     // Print the trace table showing the execution details of the agent
     crate::trace::print_trace_table(&store.data().traces);
+    
+    // Print peak RSS for benchmarking
+    print_peak_rss();
     
     Ok(())
 }
@@ -291,6 +300,31 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         state_mut.record_trace(crate::trace::AgentTrace {
             step,
             action: "get_goal".to_string(),
+            args: "-".to_string(),
+            tokens: "-".to_string(),
+            latency,
+            result: format!("{} B", len_to_copy),
+        });
+        
+        len_to_copy as i32
+    })?;
+    
+    linker.func_wrap("env", "get_manifest_tools", |mut caller: Caller<'_, AgentState>, out_ptr: i32, out_max: i32| -> i32 {
+        let start_time = std::time::Instant::now();
+        let memory = caller.get_export("memory").unwrap().into_memory().unwrap();
+        let tools = caller.data().manifest.tools.clone().unwrap_or_default().join(",");
+        
+        let resp_bytes = tools.as_bytes();
+        let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
+        
+        memory.write(&mut caller, out_ptr as usize, &resp_bytes[..len_to_copy]).unwrap();
+        
+        let latency = start_time.elapsed();
+        let state_mut = caller.data_mut();
+        let step = (state_mut.traces.len() + 1) as u32;
+        state_mut.record_trace(crate::trace::AgentTrace {
+            step,
+            action: "get_tools".to_string(),
             args: "-".to_string(),
             tokens: "-".to_string(),
             latency,
@@ -951,4 +985,30 @@ fn get_node_permission_flag() -> &'static str {
             _ => "--experimental-permission",
         }
     })
+}
+
+/// Print peak RSS (Resident Set Size) of the current process for benchmarking.
+/// Uses /proc/self/status on Linux, `ps` on macOS.
+fn print_peak_rss() {
+    // Try /proc/self/status first (Linux)
+    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+        for line in status.lines() {
+            if line.starts_with("VmRSS:") || line.starts_with("VmHWM:") {
+                info!("[Benchmark] {}", line.trim());
+            }
+        }
+        return;
+    }
+    // Fallback: use ps (macOS / BSD)
+    if let Ok(output) = std::process::Command::new("ps")
+        .args(["-o", "rss=", "-p", &std::process::id().to_string()])
+        .output()
+    {
+        if let Ok(rss_str) = String::from_utf8(output.stdout) {
+            if let Ok(rss_kb) = rss_str.trim().parse::<u64>() {
+                let rss_mb = rss_kb as f64 / 1024.0;
+                println!("📊 Peak RSS: {} KB ({:.1} MB)", rss_kb, rss_mb);
+            }
+        }
+    }
 }

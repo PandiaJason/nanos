@@ -1,7 +1,7 @@
 name: "nanos-fleet"
 model:
   provider: "ollama"
-  model_name: "qwen2.5-coder:0.5b"
+  model_name: "qwen2.5-coder:1.5b"
   context_window: 4096
 resources:
   memory: "4gb"

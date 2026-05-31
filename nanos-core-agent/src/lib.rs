@@ -6,6 +6,7 @@ extern "C" {
     fn memory_recall(ptr: *const u8, len: usize, out_ptr: *mut u8, out_max: usize) -> i32;
     fn llm_infer(prompt_ptr: *const u8, prompt_len: usize, out_ptr: *mut u8, out_max: usize) -> i32;
     fn get_manifest_goal(out_ptr: *mut u8, out_max: usize) -> i32;
+    fn get_manifest_tools(out_ptr: *mut u8, out_max: usize) -> i32;
     fn mcp_call(
         server_ptr: *const u8, server_len: usize,
         tool_ptr: *const u8, tool_len: usize,
@@ -26,11 +27,75 @@ struct ToolCall {
 }
 
 /// Build the system prompt using ChatML format for Qwen.
-/// Focused on the three core tools to avoid confusing small models.
-fn build_system_prompt() -> String {
-    String::from(
-        "<|im_start|>system\nYou are a tool-calling AI agent. You MUST respond with exactly one raw JSON object per turn. No markdown, no explanation, no code fences, no backticks.\n\nAvailable tools:\n- fs_read: Read a file. Args = string (the file path).\n- fs_write: Write content to a file. Args = {\"path\": \"...\", \"content\": \"...\"}.\n- done: Task complete. Args = string (result summary).\n\nIMPORTANT RULES:\n1. To save data to a file, you MUST use fs_write with path and content.\n2. Respond with ONLY one JSON object. No extra text.\n3. After writing a file, call done.\n\nExamples:\n{\"action\": \"fs_read\", \"args\": \"instruction.txt\"}\n{\"action\": \"fs_write\", \"args\": {\"path\": \"output.txt\", \"content\": \"hello world\"}}\n{\"action\": \"done\", \"args\": \"Task finished successfully.\"}\n<|im_end|>\n"
-    )
+/// Tailored dynamically to only include allowed tools.
+fn build_system_prompt(allowed_tools: &[&str]) -> String {
+    let mut prompt = String::from(
+        "<|im_start|>system\nYou are a tool-calling AI agent. You MUST respond with exactly one raw JSON object per turn. No markdown, no explanation, no code fences, no backticks.\n\nAvailable tools:\n"
+    );
+
+    for tool in allowed_tools {
+        match *tool {
+            "fs_read" => {
+                prompt.push_str("- fs_read: Read a file. Args = string (the file path).\n");
+            }
+            "fs_write" => {
+                prompt.push_str("- fs_write: Write content to a file. Args = {\"path\": \"...\", \"content\": \"...\"}.\n");
+            }
+            "web_get" => {
+                prompt.push_str("- web_get: Fetch contents of a URL. Args = string (the URL).\n");
+            }
+            "mcp_call" => {
+                prompt.push_str("- mcp_call: Call an external MCP tool. Args = {\"server\": \"...\", \"tool\": \"...\", \"arguments\": {...}}.\n");
+            }
+            "agent_send" => {
+                prompt.push_str("- agent_send: Send a message to another agent. Args = {\"target\": \"...\", \"msg\": \"...\"}.\n");
+            }
+            "agent_recv" => {
+                prompt.push_str("- agent_recv: Receive the next message from your message queue. Args = null or empty object (no arguments needed).\n");
+            }
+            "eval_js" => {
+                prompt.push_str("- eval_js: Evaluate JavaScript code. Args = string (the code to run).\n");
+            }
+            "done" => {
+                prompt.push_str("- done: Task complete. Args = string (result summary).\n");
+            }
+            _ => {
+                prompt.push_str(&format!("- {}: Execute tool {}.\n", tool, tool));
+            }
+        }
+    }
+
+    // Done tool is always allowed
+    if !allowed_tools.contains(&"done") {
+        prompt.push_str("- done: Task complete. Args = string (result summary).\n");
+    }
+
+    prompt.push_str("\nIMPORTANT RULES:\n");
+    prompt.push_str("1. Respond with ONLY one JSON object containing 'action' and 'args'. No extra text.\n");
+    prompt.push_str("2. Once the goal is completed, call done.\n");
+
+    prompt.push_str("\nExamples of correct format:\n");
+    for tool in allowed_tools {
+        match *tool {
+            "fs_read" => {
+                prompt.push_str("{\"action\": \"fs_read\", \"args\": \"instruction.txt\"}\n");
+            }
+            "fs_write" => {
+                prompt.push_str("{\"action\": \"fs_write\", \"args\": {\"path\": \"output.txt\", \"content\": \"hello\"}}\n");
+            }
+            "agent_send" => {
+                prompt.push_str("{\"action\": \"agent_send\", \"args\": {\"target\": \"writer\", \"msg\": \"hello\"}}\n");
+            }
+            "agent_recv" => {
+                prompt.push_str("{\"action\": \"agent_recv\", \"args\": {}}\n");
+            }
+            _ => {}
+        }
+    }
+    prompt.push_str("{\"action\": \"done\", \"args\": \"finished successfully\"}\n");
+    prompt.push_str("<|im_end|>\n");
+
+    prompt
 }
 
 #[no_mangle]
@@ -40,7 +105,17 @@ pub extern "C" fn run_agent() {
     let goal_len = unsafe { get_manifest_goal(goal_buf.as_mut_ptr(), goal_buf.len()) };
     let goal = core::str::from_utf8(&goal_buf[..goal_len as usize]).unwrap_or("Unknown goal");
 
-    let mut context = build_system_prompt();
+    // Fetch the allowed tools dynamically from the host manifest
+    let mut tools_buf = [0u8; 1024];
+    let tools_len = unsafe { get_manifest_tools(tools_buf.as_mut_ptr(), tools_buf.len()) };
+    let tools_str = core::str::from_utf8(&tools_buf[..tools_len as usize]).unwrap_or("");
+    let allowed_tools: Vec<&str> = if tools_str.is_empty() {
+        vec!["fs_read", "fs_write", "done"] // fallback defaults
+    } else {
+        tools_str.split(',').collect()
+    };
+
+    let mut context = build_system_prompt(&allowed_tools);
     context.push_str("<|im_start|>user\n");
     context.push_str(goal);
     context.push_str("<|im_end|>\n");
@@ -250,5 +325,61 @@ fn dispatch_tool(tc: &ToolCall) -> String {
             }
         }
         _ => format!("[Error]: Unknown action '{}'.", tc.action),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_json;
+
+    #[test]
+    fn extract_clean_json() {
+        let input = r#"{"action": "done", "args": "ok"}"#;
+        assert_eq!(extract_json(input), Some(input));
+    }
+
+    #[test]
+    fn extract_json_from_markdown_fences() {
+        let input = "```json\n{\"action\": \"fs_read\", \"args\": \"file.txt\"}\n```";
+        let expected = r#"{"action": "fs_read", "args": "file.txt"}"#;
+        assert_eq!(extract_json(input), Some(expected));
+    }
+
+    #[test]
+    fn extract_nested_json() {
+        let input = r#"{"action": "fs_write", "args": {"path": "out.txt", "content": "hello"}}"#;
+        assert_eq!(extract_json(input), Some(input));
+        // Verify it's actually valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(extract_json(input).unwrap()).unwrap();
+        assert_eq!(parsed["args"]["path"], "out.txt");
+    }
+
+    #[test]
+    fn extract_json_returns_none_for_no_json() {
+        assert_eq!(extract_json("no json here"), None);
+        assert_eq!(extract_json(""), None);
+        assert_eq!(extract_json("just some text with no braces"), None);
+    }
+
+    #[test]
+    fn extract_json_with_escaped_quotes() {
+        let input = r#"{"action": "done", "args": "He said \"hello\""}"#;
+        let result = extract_json(input).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(result).unwrap();
+        assert_eq!(parsed["action"], "done");
+        assert_eq!(parsed["args"], r#"He said "hello""#);
+    }
+
+    #[test]
+    fn extract_json_with_leading_text() {
+        let input = "Here is the result: {\"action\": \"done\", \"args\": \"finished\"} end";
+        let expected = r#"{"action": "done", "args": "finished"}"#;
+        assert_eq!(extract_json(input), Some(expected));
+    }
+
+    #[test]
+    fn extract_json_unbalanced_returns_none() {
+        // Opening brace but never closed
+        assert_eq!(extract_json("{\"action\": \"test\""), None);
     }
 }
