@@ -1,0 +1,18 @@
+name: "e2e-test-agent"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:1.5b"
+  context_window: 4096
+resources:
+  memory: "4gb"
+  max_steps: 10
+permissions:
+  fs_read:
+    - "instruction.txt"
+  fs_write:
+    - "secret.txt"
+  network: false
+tools:
+  - "fs_read"
+  - "fs_write"
+goal: "Read the file instruction.txt. Find the INSTALLATION_SECRET_KEY value. Then write ONLY that secret key value into a new file called secret.txt. Then call done."

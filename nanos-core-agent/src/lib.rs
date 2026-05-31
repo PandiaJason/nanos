@@ -25,11 +25,11 @@ struct ToolCall {
     args: serde_json::Value,
 }
 
-/// Build the system prompt using ChatML format for Qwen3.
-/// /no_think disables the CoT thinking mode for clean, direct JSON output.
+/// Build the system prompt using ChatML format for Qwen.
+/// Focused on the three core tools to avoid confusing small models.
 fn build_system_prompt() -> String {
     String::from(
-        "<|im_start|>system\nYou are a tool-calling AI agent. You MUST respond with exactly one raw JSON object per turn, nothing else. No markdown, no explanation, no code fences.\n\nAvailable tools:\n- fs_read: Read a file. Args = string (the file path).\n- fs_write: Write a file. Args = {\"path\": \"...\", \"content\": \"...\"}.\n- agent_send: Send a message to another agent. Args = {\"target\": \"agent_name\", \"msg\": \"...\"}.\n- agent_recv: Receive message from queue. Args = empty.\n- done: Task complete. Args = string (result summary).\n\nYou MUST respond with ONLY a JSON object like:\n{\"action\": \"fs_read\", \"args\": \"instruction.txt\"}\n{\"action\": \"agent_send\", \"args\": {\"target\": \"writer\", \"msg\": \"The code is 42\"}}\n{\"action\": \"agent_recv\", \"args\": {}}\n{\"action\": \"done\", \"args\": \"Task finished successfully.\"}\n<|im_end|>\n"
+        "<|im_start|>system\nYou are a tool-calling AI agent. You MUST respond with exactly one raw JSON object per turn. No markdown, no explanation, no code fences, no backticks.\n\nAvailable tools:\n- fs_read: Read a file. Args = string (the file path).\n- fs_write: Write content to a file. Args = {\"path\": \"...\", \"content\": \"...\"}.\n- done: Task complete. Args = string (result summary).\n\nIMPORTANT RULES:\n1. To save data to a file, you MUST use fs_write with path and content.\n2. Respond with ONLY one JSON object. No extra text.\n3. After writing a file, call done.\n\nExamples:\n{\"action\": \"fs_read\", \"args\": \"instruction.txt\"}\n{\"action\": \"fs_write\", \"args\": {\"path\": \"output.txt\", \"content\": \"hello world\"}}\n{\"action\": \"done\", \"args\": \"Task finished successfully.\"}\n<|im_end|>\n"
     )
 }
 
@@ -46,6 +46,8 @@ pub extern "C" fn run_agent() {
     context.push_str("<|im_end|>\n");
 
     let max_steps = 10;
+    let mut last_action = String::new();
+    let mut repeat_count = 0u32;
 
     for _step in 0..max_steps {
         // Ask the LLM to generate a tool call
@@ -74,18 +76,42 @@ pub extern "C" fn run_agent() {
 
         if let Some(json) = json_str {
             if let Ok(tool_call) = serde_json::from_str::<ToolCall>(json) {
+                // Detect repeating loops
+                let current_action = format!("{}:{}", tool_call.action, tool_call.args);
+                if current_action == last_action {
+                    repeat_count += 1;
+                } else {
+                    repeat_count = 0;
+                }
+                last_action = current_action;
+
                 // Route the tool call to the appropriate syscall
                 let observation = dispatch_tool(&tool_call);
 
                 if tool_call.action == "done" {
-                    // Agent declared completion
                     break;
                 }
 
+                // Truncate very long observations to prevent context overflow
+                let truncated_obs = if observation.len() > 1500 {
+                    let mut t = observation[..1500].to_string();
+                    t.push_str("\n...[truncated]");
+                    t
+                } else {
+                    observation
+                };
+
                 // Feed the observation back as a user message
-                context.push_str("<|im_start|>user\n[Observation]: ");
-                context.push_str(&observation);
-                context.push_str("<|im_end|>\n");
+                if repeat_count >= 2 {
+                    // Agent is stuck — give it a strong nudge
+                    context.push_str("<|im_start|>user\n[Observation]: ");
+                    context.push_str(&truncated_obs);
+                    context.push_str("\n\nYou already read this file. Now use fs_write to write the result to a file, then call done.<|im_end|>\n");
+                } else {
+                    context.push_str("<|im_start|>user\n[Observation]: ");
+                    context.push_str(&truncated_obs);
+                    context.push_str("\n\nNow decide your next action. Respond with a JSON object.<|im_end|>\n");
+                }
             } else {
                 context.push_str("<|im_start|>user\n[Error]: Your output was not valid JSON. Respond with ONLY a JSON object like {\"action\": \"fs_read\", \"args\": \"file.txt\"}<|im_end|>\n");
             }
@@ -94,6 +120,7 @@ pub extern "C" fn run_agent() {
         }
     }
 }
+
 
 /// Extract the first balanced JSON object `{...}` from a string.
 fn extract_json(text: &str) -> Option<&str> {
