@@ -15,27 +15,22 @@ pub enum Commands {
     /// Run an AI agent from a nano manifest
     Run {
         /// Path to the agent.nano manifest file
-        #[arg(default_value = "agent.nano")]
-        manifest: PathBuf,
+        manifest: Option<PathBuf>,
     },
     /// Serve an AI agent via local socket (TODO)
     Serve {
-        #[arg(default_value = "agent.nano")]
-        manifest: PathBuf,
+        manifest: Option<PathBuf>,
     },
     /// Run a latency benchmark against the model using native FFI
     Bench {
-        #[arg(default_value = "agent.nano")]
-        manifest: PathBuf,
+        manifest: Option<PathBuf>,
     },
     /// Orchestrate a multi-agent fleet from a manifest
     Orchestrate {
-        #[arg(default_value = "fleet.nano")]
-        manifest: PathBuf,
+        manifest: Option<PathBuf>,
     },
     /// View real-time agent execution status and Time-Travel debug console
     Dashboard {
-        #[arg(default_value = "fleet.nano")]
-        manifest: PathBuf,
+        manifest: Option<PathBuf>,
     },
 }

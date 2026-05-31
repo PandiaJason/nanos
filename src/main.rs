@@ -22,7 +22,15 @@ fn main() -> Result<()> {
         Commands::Run { manifest } => {
             info!("nanos spawning process...");
             
-            match AgentManifest::load_from_file(manifest) {
+            let resolved_path = match resolve_manifest(manifest, &["agent.nano", "test_e2e.nano", "mcp_test.nano"]) {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+
+            match AgentManifest::load_from_file(&resolved_path) {
                 Ok(agent_manifest) => {
                     let name = agent_manifest.name.as_deref().unwrap_or("nanos-agent");
                     let goal = agent_manifest.goal.as_deref().unwrap_or("No goal specified");
@@ -45,20 +53,41 @@ fn main() -> Result<()> {
         }
         Commands::Orchestrate { manifest } => {
             info!("nanos orchestrating fleet...");
-            if let Err(e) = nanos::orchestrator::orchestrate(manifest) {
+            let resolved_path = match resolve_manifest(manifest, &["fleet.nano"]) {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = nanos::orchestrator::orchestrate(&resolved_path) {
                 error!("Fleet orchestration failed: {:?}", e);
                 std::process::exit(1);
             }
         }
         Commands::Dashboard { manifest } => {
-            if let Err(e) = nanos::dashboard::run_dashboard(manifest) {
+            let resolved_path = match resolve_manifest(manifest, &["fleet.nano", "agent.nano", "test_e2e.nano"]) {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            if let Err(e) = nanos::dashboard::run_dashboard(&resolved_path) {
                 error!("Dashboard failed: {:?}", e);
                 std::process::exit(1);
             }
         }
         Commands::Bench { manifest } => {
             info!("nanos benchmark mode...");
-            match AgentManifest::load_from_file(manifest) {
+            let resolved_path = match resolve_manifest(manifest, &["agent.nano", "test_e2e.nano"]) {
+                Ok(path) => path,
+                Err(e) => {
+                    error!("{}", e);
+                    std::process::exit(1);
+                }
+            };
+            match AgentManifest::load_from_file(&resolved_path) {
                 Ok(agent_manifest) => {
                     info!("Loaded Agent Model for Benchmark: {:?}", agent_manifest.model.path);
                     
@@ -96,4 +125,40 @@ Example output:
     }
 
     Ok(())
+}
+
+fn resolve_manifest(
+    manifest: &Option<std::path::PathBuf>,
+    default_names: &[&str],
+) -> Result<std::path::PathBuf> {
+    if let Some(path) = manifest {
+        if path.exists() {
+            return Ok(path.clone());
+        }
+        return Err(anyhow::anyhow!("Manifest file not found at: {:?}", path));
+    }
+    
+    // Auto-discover in current directory and common locations
+    for name in default_names {
+        let paths = [
+            std::path::PathBuf::from(name),
+            std::path::PathBuf::from("examples").join(name),
+        ];
+        for p in &paths {
+            if p.exists() {
+                info!("Auto-discovered manifest: {:?}", p);
+                return Ok(p.clone());
+            }
+        }
+    }
+    
+    Err(anyhow::anyhow!(
+        "No manifest file specified, and could not auto-discover any default manifests (e.g. '{}') in the current directory.\n\n\
+        To resolve this, please do one of the following:\n\
+        1. Run the command from the nanos directory (which contains the 'examples/' folder).\n\
+        2. Specify the path to your manifest explicitly, e.g.:\n\
+           nanos dashboard examples/fleet.nano\n\
+           nanos run /path/to/agent.nano",
+        default_names.first().unwrap_or(&"agent.nano")
+    ))
 }
