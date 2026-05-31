@@ -769,6 +769,8 @@ fn run_js_agent(
         let params = request.get("params").and_then(|p| p.as_array());
         let request_id = request.get("id").cloned().unwrap_or(Value::Null);
         
+        let start_time = std::time::Instant::now();
+        
         let result = match method {
             "fs_read" => {
                 let path = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
@@ -779,8 +781,9 @@ fn run_js_agent(
                 } else {
                     std::fs::read_to_string(path).unwrap_or_else(|e| format!("Error reading file: {}", e))
                 };
+                let latency = start_time.elapsed();
                 step += 1;
-                record_js_trace(&mut traces, step, "fs_read", path, &res, &manifest.name);
+                record_js_trace(&mut traces, step, "fs_read", path, "-", latency, &res, &manifest.name);
                 json!(res)
             }
             "fs_write" => {
@@ -796,21 +799,24 @@ fn run_js_agent(
                         Err(e) => format!("Failed to write file: {}", e),
                     }
                 };
+                let latency = start_time.elapsed();
                 step += 1;
-                record_js_trace(&mut traces, step, "fs_write", path, &res, &manifest.name);
+                record_js_trace(&mut traces, step, "fs_write", path, "-", latency, &res, &manifest.name);
                 json!(res)
             }
             "llm_infer" => {
                 let prompt = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
-                let res = match &llm {
+                let (res, prompt_tokens, gen_tokens) = match &llm {
                     Some(engine) => match engine.infer(prompt) {
-                        Ok(r) => r.response,
-                        Err(e) => format!("LLM inference error: {}", e),
+                        Ok(r) => (r.response, r.prompt_tokens, r.gen_tokens),
+                        Err(e) => (format!("LLM inference error: {}", e), 0, 0),
                     },
-                    None => "LLM engine not loaded".to_string(),
+                    None => ("LLM engine not loaded".to_string(), 0, 0),
                 };
+                let latency = start_time.elapsed();
                 step += 1;
-                record_js_trace(&mut traces, step, "llm_infer", prompt, &res, &manifest.name);
+                let tokens_str = format!("{}→{}", prompt_tokens, gen_tokens);
+                record_js_trace(&mut traces, step, "llm_infer", prompt, &tokens_str, latency, &res, &manifest.name);
                 json!(res)
             }
             "get_manifest_goal" => {
@@ -819,8 +825,9 @@ fn run_js_agent(
             }
             "done" => {
                 let summary = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("Done");
+                let latency = start_time.elapsed();
                 step += 1;
-                record_js_trace(&mut traces, step, "done", summary, "Finished", &manifest.name);
+                record_js_trace(&mut traces, step, "done", summary, "-", latency, "Finished", &manifest.name);
                 let response = json!({
                     "jsonrpc": "2.0",
                     "result": "Done",
@@ -841,21 +848,24 @@ fn run_js_agent(
                         Err(e) => format!("HTTP Request failed: {}", e),
                     }
                 };
+                let latency = start_time.elapsed();
                 step += 1;
-                record_js_trace(&mut traces, step, "web_get", url, &res, &manifest.name);
+                record_js_trace(&mut traces, step, "web_get", url, "-", latency, &res, &manifest.name);
                 json!(res)
             }
             "agent_send" => {
                 let target = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
                 let msg = params.and_then(|p| p.get(1)).and_then(|v| v.as_str()).unwrap_or("");
-                if let Some(ref message_bus) = bus {
+                let res = if let Some(ref message_bus) = bus {
                     message_bus.send(target, msg.to_string());
-                    step += 1;
-                    record_js_trace(&mut traces, step, "agent_send", target, "Message sent", &manifest.name);
-                    json!("Message sent successfully.")
+                    "Message sent successfully.".to_string()
                 } else {
-                    json!("Error: MessageBus not loaded.")
-                }
+                    "Error: MessageBus not loaded.".to_string()
+                };
+                let latency = start_time.elapsed();
+                step += 1;
+                record_js_trace(&mut traces, step, "agent_send", target, "-", latency, "Message sent", &manifest.name);
+                json!(res)
             }
             "agent_recv" => {
                 let res = if let Some(ref message_bus) = bus {
@@ -864,8 +874,9 @@ fn run_js_agent(
                 } else {
                     "Error: MessageBus not loaded.".to_string()
                 };
+                let latency = start_time.elapsed();
                 step += 1;
-                record_js_trace(&mut traces, step, "agent_recv", &manifest.name.clone().unwrap_or_default(), &res, &manifest.name);
+                record_js_trace(&mut traces, step, "agent_recv", &manifest.name.clone().unwrap_or_default(), "-", latency, &res, &manifest.name);
                 json!(res)
             }
             "mcp_call" => {
@@ -880,8 +891,9 @@ fn run_js_agent(
                         Err(e) => res = format!("MCP Error: {}", e),
                     }
                 }
+                let latency = start_time.elapsed();
                 step += 1;
-                record_js_trace(&mut traces, step, "mcp_call", tool, &res, &manifest.name);
+                record_js_trace(&mut traces, step, "mcp_call", tool, "-", latency, &res, &manifest.name);
                 json!(res)
             }
             _ => json!(format!("Error: Unknown method '{}'", method)),
@@ -908,16 +920,17 @@ fn record_js_trace(
     step: u32,
     action: &str,
     args: &str,
+    tokens: &str,
+    latency: std::time::Duration,
     result: &str,
     agent_name: &Option<String>,
 ) {
     let name = agent_name.clone().unwrap_or_else(|| "nanos-agent".to_string());
-    let latency = std::time::Duration::from_millis(0);
     let trace = crate::trace::AgentTrace {
         step,
         action: action.to_string(),
         args: args.to_string(),
-        tokens: "-".to_string(),
+        tokens: tokens.to_string(),
         latency,
         result: if result.len() > 30 { format!("{} B", result.len()) } else { result.to_string() },
     };
