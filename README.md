@@ -68,6 +68,9 @@ Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolati
 
 ## ⚡ Benchmarks
 
+Here is the empirical proof of why the `nanos` architecture is a game-changer for agent deployment.
+
+### 1. Runtime Overhead & Boot Latency
 *Measured on Apple M1 Pro (macOS), qwen2.5-coder 1.5B, Metal GPU layers offloaded:*
 
 | Metric / Stack | Docker Desktop VM + Python | **nanos (WASM + Host FFI)** | **Delta** | **How Verified** |
@@ -78,8 +81,8 @@ Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolati
 
 *Note: RAM footprint excludes loaded LLM weights, measuring only the container/runtime overhead. nanos has zero background daemon overhead.*
 
-### 🐳 Proof of Concept: Docker vs. Native Host LLM Inference
-To demonstrate why container-based agent platforms underperform on consumer hardware, we benchmarked the exact same `qwen2.5-coder:0.5b` model on the native Apple Silicon Host (representing `nanos`' native FFI GPU offload pipeline) vs. a standard Docker container running via virtualized CPU:
+### 2. Local LLM Inference Performance (Metal GPU vs. Virtualized CPU)
+To demonstrate why container-based agent platforms underperform on consumer hardware, we benchmarked the exact same `qwen2.5-coder:0.5b` model on the native Apple Silicon Host (representing `nanos`' native host FFI GPU offload pipeline) vs. a standard Docker container running via virtualized CPU:
 
 | Metric | Docker Container (CPU-only VM) | Native Host (Metal GPU / Nanos) | Speedup / Impact |
 | :--- | :---: | :---: | :---: |
