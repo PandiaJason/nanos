@@ -1,12 +1,12 @@
 <div align="center">
   <img src="assets/nanos_logo.png" alt="nanos Logo" width="180">
   <h1>⚡ nanos</h1>
-  <p><b>The lightweight, secure, and ultra-fast WebAssembly micro-runtime for sandboxed AI agents.</b></p>
+  <p><b>The kernel-level LLM and agent sandboxer.</b></p>
 
   <p>
     <a href="https://github.com/PandiaJason/nanos/actions"><img src="https://github.com/PandiaJason/nanos/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
     <a href="https://webassembly.org/"><img src="https://img.shields.io/badge/runtime-WASM-blueviolet?style=for-the-badge&logo=webassembly" alt="WASM"></a>
-    <img src="https://img.shields.io/badge/sandbox-hardware--isolated-00cc88?style=for-the-badge" alt="Sandboxed">
+    <img src="https://img.shields.io/badge/sandbox-process--isolated-00cc88?style=for-the-badge" alt="Sandboxed">
     <img src="https://img.shields.io/badge/GPU-Metal%20%2F%20CUDA-ff6b6b?style=for-the-badge" alt="GPU">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=for-the-badge" alt="License"></a>
   </p>
@@ -19,7 +19,9 @@
 
 ## 💡 What is nanos?
 
-**nanos** is a Rust-native, WebAssembly-powered micro-runtime for AI agents. By executing compiled agent binaries inside a hardware-isolated WebAssembly sandbox (Wasmtime), it cuts the typical runtime RAM footprint from **2GB+ (Docker Desktop VM on macOS) to ~39MB**, while booting the VM in **< 3ms**. 
+**nanos is not a VM, and it is not a container. It is a kernel-level LLM and agent sandboxer.**
+
+Instead of virtualizing an operating system or containerizing a network stack, `nanos` acts as a microkernel for AI agents. The native host runtime acts as the kernel space—providing secure, audited access to files, networks, MCP tools, and GPU silicon (Apple Metal/CUDA)—while the agent executes inside a hardware-isolated user-space WebAssembly (WASM) sandbox.
 
 Rather than deploying agents as bloated virtual machines that talk to tools over HTTP, `nanos` executes tool calls via direct, in-memory **Foreign Function Interface (FFI) pointer passing**. The host and the agent share a zero-copy memory boundary, eliminating JSON serialization latency and local TCP socket overhead.
 
