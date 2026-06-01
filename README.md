@@ -24,6 +24,19 @@
 Instead of virtualizing an operating system or containerizing a network stack, `nanos` acts as a microkernel for AI agents. The native host runtime acts as the kernel space—providing secure, audited access to files, networks, MCP tools, and GPU silicon (Apple Metal/CUDA)—while the agent executes inside a hardware-isolated user-space WebAssembly (WASM) sandbox.
 
 Rather than deploying agents as bloated virtual machines that talk to tools over HTTP, `nanos` executes tool calls via direct, in-memory **Foreign Function Interface (FFI) pointer passing**. The host and the agent share a zero-copy memory boundary, eliminating JSON serialization latency and local TCP socket overhead.
+---
+
+## 🌍 A New Paradigm
+
+nanos is the first open-source runtime to combine all three of these properties simultaneously for local on-device AI agents:
+
+| Property | What existed before | What nanos does |
+|---|---|---|
+| **WASM process isolation** | WasmEdge/LlamaEdge — but LLM runs as HTTP server | Agent logic isolated in WASM sandbox |
+| **Native Metal/CUDA GPU offload** | llama.cpp bare-metal — but zero isolation | LLM inference runs natively on host GPU |
+| **In-process FFI tool syscalls** | MCP over HTTP/stdio — network round-trip per call | Tools called via zero-copy memory pointer pass |
+
+No existing tool combines all three. That is the claim.
 
 ---
 
