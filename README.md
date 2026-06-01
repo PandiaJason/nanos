@@ -1,7 +1,7 @@
 <div align="center">
   <img src="assets/nanos_logo.png" alt="nanos Logo" width="180">
   <h1>⚡ nanos</h1>
-  <p><b>The lightweight, secure, and ultra-fast WebAssembly micro-runtime for AI agents.</b></p>
+  <p><b>The lightweight, secure, and ultra-fast WebAssembly micro-runtime for sandboxed AI agents.</b></p>
 
   <p>
     <a href="https://github.com/PandiaJason/nanos/actions"><img src="https://github.com/PandiaJason/nanos/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
@@ -12,20 +12,8 @@
   </p>
 
   <h3>📉 50x RAM Reduction (~39MB RSS vs 2GB+ VM) · ⚡ &lt; 3ms Sandbox Boot · Zero Docker · Zero Python</h3>
-  <p><b>Just the agent, the weights, and the silicon. Serving WASM-sandboxed agents via CLI, HTTP API, or TUI.</b></p>
+  <p><b>Just the agent, the weights, and the silicon. Serving WASM-sandboxed agents via CLI, HTTP API, TUI, or Web Debugger.</b></p>
 </div>
-
----
-
-## 🚨 Project Status: Active Research Prototype
-
-`nanos` is currently in active research and development. To keep this project grounded and credible for developers, we draw an honest line between what is fully working today, what is currently in active development, and what is planned for the roadmap.
-
-| Status | Features | Technical Justification & Current State |
-| :--- | :--- | :--- |
-| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal & CUDA GPU Offload** (macOS/Linux)<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** (`fs`, `llm`, `web`) <br>• **JS/TS SDK Compiler**<br>• **Multi-Agent Fleet Orchestration** (Threads & Networks)<br>• **Distributed Fleet Nodes (TCP Network Message Bus)**<br>• **Full MCP Client Proxy Protocol Compliance**<br>• **HTTP API Daemon (`nanos serve`)**<br>• **Time-Travel Visual Web Debugger Dashboard**<br>• **NPM Package Registry Build** (`nanos-sdk`) | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU / Linux CUDA mapping compile and run cleanly. System calls run entirely in-memory or proxy to remote nodes over TCP sockets. JS/TS compilation via `nanos-compile.js` and Node sandbox dynamic permission routing is fully functional. Distributed fleet orchestration communicating over TCP with line-delimited JSON-RPC packets is fully tested and working. Spawning and executing MCP server stdio tools with tools, prompts, resources, and schema validation hooks is fully compliant. The HTTP API Daemon (`nanos serve`) serves a beautiful visual web GUI debugger companion on `GET /` and dynamic time-travel replaying on `POST /v1/replay`. |
-| **🔧 In Progress** | • **Python / Go SDK Bindings**<br>• **Performance Optimizations** | Providing high-level SDK libraries for Python and Go developers to build and compile sandboxed agents. Tuning zero-copy memory FFI throughput. |
-| **📋 Planned Roadmap** | • **Wasmer / WasmEdge Integration**<br>• **Dynamic Resource Hot-plugging** | Support for alternative WebAssembly execution engines and pluggable tool-calling servers. |
 
 ---
 
@@ -34,21 +22,6 @@
 **nanos** is a Rust-native, WebAssembly-powered micro-runtime for AI agents. By executing compiled agent binaries inside a hardware-isolated WebAssembly sandbox (Wasmtime), it cuts the typical runtime RAM footprint from **2GB+ (Docker Desktop VM on macOS) to ~39MB**, while booting the VM in **< 3ms**. 
 
 Rather than deploying agents as bloated virtual machines that talk to tools over HTTP, `nanos` executes tool calls via direct, in-memory **Foreign Function Interface (FFI) pointer passing**. The host and the agent share a zero-copy memory boundary, eliminating JSON serialization latency and local TCP socket overhead.
-
----
-
-## 📖 About & Philosophy
-
-`nanos` was built to address the **agent deployment crisis**. 
-
-As LLMs become smaller, faster, and capable of running locally (e.g., Llama 3, Qwen 2.5), the bottlenecks of agent execution have shifted. It is no longer just the model inference time that slows down applications—it is the glue code, the network roundtrips between isolated components, and the astronomical RAM overhead of running a Docker container for every single agent step.
-
-### The Agent as a Micro-Kernel
-We view an AI agent not as a web service, but as an **operating system process**. 
-An agent is simply a loop that reads input, reasons, runs a tool, and updates its state. By compiling agent code to WebAssembly, `nanos` treats tool calls as standard OS system calls (syscalls). Wasmtime intercepts these calls, validates permission rules, and executes the tools natively on the host at hardware speeds with zero virtualization overhead.
-
-### Local-First & Air-Gapped Philosophy
-Agents should run where the data lives. `nanos` is designed to run entirely locally without requiring external cloud accounts or internet connectivity. By mapping local GPU hardware (Apple Metal and CUDA) and running local model providers, agents can perform private, secure, and low-latency work on-device.
 
 ---
 
@@ -69,6 +42,17 @@ One binary. One process. No network. No serialization tax.
 <p align="center">
   <img src="assets/nanos_stack_comparison.png" alt="nanos Stack Comparison" width="750">
 </p>
+
+---
+
+## ✨ Features
+
+*   **🔐 Hardware-Isolated WASM Sandbox**: Every agent runs inside a strict, metered `wasmtime` store with WASM linear memory isolation, fuel limits to prevent infinite loops, and strict memory caps.
+*   **🎮 Native Metal & CUDA GPU Offload**: Model weights are memory-mapped directly onto Apple Metal or Linux CUDA graphics hardware via native `llama.cpp` layers (`--features gpu-cuda`).
+*   **🤖 Multi-Agent Fleet Orchestration**: Orchestrate cooperative multi-agent fleets concurrently sharing a single `LlmEngine` locally via threads or across networks using distributed TCP message bus client/server connections.
+*   **🔌 Universal MCP Tool Proxy**: Bridge standard Model Context Protocol (MCP) servers straight to WASM. Query tools, discover resources, pull prompts, and validate schemas dynamically.
+*   **🕰️ Time-Travel Visual Web Debugger**: Inspect step execution traces, RAM consumption, tokens, and FFI latency. Click to edit observations or prompt variables, and launch divergent replays.
+*   **🛡️ Sandboxed JS/TS SDK Runtime**: Write agents in TypeScript/JavaScript, compile them into WASM dynamic bundles via `nanos-compile.js`, and execute them safely with dynamic host permission rules.
 
 ---
 
@@ -96,214 +80,6 @@ Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolati
 
 ---
 
-## 🧪 Live E2E Test Run
-
-Real execution output from `cargo run -- run examples/test_e2e.nano` — a sandboxed agent that reads a file, extracts a secret key, writes it to disk, and terminates. No mocks, no fakes.
-
-**Goal:** *"Read instruction.txt → extract `INSTALLATION_SECRET_KEY` → write it to secret.txt → done."*
-
-### Execution Trace
-
-```
-┌──────┬───────────┬────────────────────────────────┬──────────┬──────────┬──────────┐
-│ Step │ Action    │ Args                           │ Tokens   │ Latency  │ Result   │
-├──────┼───────────┼────────────────────────────────┼──────────┼──────────┼──────────┤
-│ 1    │ get_goal  │ -                              │ -        │ 0.0ms    │ 159 B    │
-│ 2    │ llm_infer │ (prompt)                       │ 237→23   │ 429ms    │ JSON OK  │
-│ 3    │ fs_read   │ instruction.txt                │ -        │ 0.1ms    │ 804 B    │
-│ 4    │ llm_infer │ (prompt)                       │ 455→23   │ 495ms    │ JSON OK  │
-│ 5    │ fs_read   │ instruction.txt                │ -        │ 0.2ms    │ 804 B    │
-│ 6    │ llm_infer │ (prompt)                       │ 673→23   │ 500ms    │ JSON OK  │
-│ 7    │ fs_read   │ instruction.txt                │ -        │ 0.2ms    │ 804 B    │
-│ 8    │ llm_infer │ (prompt)                       │ 901→39   │ 688ms    │ JSON OK  │
-│ 9    │ fs_write  │ secret.txt                     │ -        │ 2ms      │ OK       │
-│ 10   │ llm_infer │ (prompt)                       │ 970→23   │ 366ms    │ JSON OK  │
-└──────┴───────────┴────────────────────────────────┴──────────┴──────────┴──────────┘
-Total: 10 steps, 3236 prompt tokens, 131 generated tokens (2.48s)
-Fuel consumed: 523,667 / 1,000,000 (52.4%)
-```
-
-### Verification
-
-```bash
-$ cat secret.txt
-secure-key-9988-alpha   # ✅ Correct — extracted from instruction.txt
-```
-
-### What This Proves
-
-| Subsystem | Verified |
-| :--- | :--- |
-| Wasmtime WASM sandbox boot | ✅ Loaded `.wasm` binary, fuel metering active |
-| Manifest parser (`.nano` YAML) | ✅ Parsed name, model, permissions, goal |
-| `fs_read` FFI syscall | ✅ Read 804 bytes from `instruction.txt` in 0.1ms |
-| `fs_write` FFI syscall | ✅ Wrote secret key to `secret.txt` in 2ms |
-| Security permission gating | ✅ Blocked unauthorized paths (deny-by-default) |
-| LLM inference via Ollama | ✅ 5 inference calls, ~490ms avg (qwen2.5-coder:1.5b) |
-| Agent loop: read → reason → write → done | ✅ Full goal completion in 2.48s |
-| Fuel budget enforcement | ✅ 52.4% consumed, agent exited cleanly before limit |
-
-> **Total wall-clock time from sandbox boot to `done`: 2.48 seconds** — including 5 LLM inference roundtrips, file I/O, and WASM fuel metering. Zero Docker. Zero Python. Zero HTTP.
-
-
----
-
-## ✨ Features
-
-### 🔐 Hardware-Isolated WASM Sandbox (Working)
-Every agent runs inside a strict `wasmtime` store:
-- **Linear memory isolation:** Agents cannot access host memory beyond their sandbox bounds.
-- **Fuel metering:** Execution budget is enforced directly at the VM instruction level to prevent infinite loops.
-- **Memory caps:** `StoreLimits` enforce max WASM heap allocation from the manifest.
-- **Permission-gated syscalls:** `fs_read` and `fs_write` require explicit directory paths in your manifest. Everything else is **deny-by-default**.
-
-### 🎮 Metal & CUDA GPU Offload (Working)
-Model weights are memory-mapped directly onto macOS Metal or Linux CUDA graphics hardware via native `llama.cpp` layers. Enable compile flag with `--features gpu-cuda`.
-
-### 🤖 Multi-Agent Fleet Orchestration (Working)
-Orchestrate multiple agents concurrently sharing a single `LlmEngine` instance. Agents communicate via thread-safe message queues locally or route through distributed nodes over a raw TCP network message bus.
-
-### 🕰️ Time-Travel Visual Web Debugger Dashboard (Working)
-Inspect any step's exact execution trace, RSS memory, token consumption, and FFI latency. Submit manifestations, click on any step to edit prompt/observation variables, and trigger a divergent execution path instantly from the GUI companion served on `GET /` during `nanos serve`.
-
-### 🔌 Universal MCP Tool Proxy (Working)
-Bridge standard Model Context Protocol (MCP) servers straight to WASM. Supports full protocol specifications including listing tools, resource discovery, loading prompts, and parsing JSON parameter validation schemas.
-
-### 🛡️ Sandboxed `eval_js` Syscall (Working)
-WASM agents can execute dynamic JavaScript code safely via a dedicated host syscall.
-* **Current state:** Enforced via Node.js `--permission` (or `--experimental-permission`) flags, denying filesystem, network, and child process access by default. Capped by execution timeouts and memory heap limits.
-
-### 📡 HTTP API Daemon Mode (Working)
-Run `nanos` as a background system daemon (similar to `dockerd` or `ollama serve`) that exposes status, execution, and orchestration endpoints via a lightweight, high-performance Axum HTTP router.
-* **Current state:** Fully integrated. Allows external services (Node, Go, Python, etc.) to securely submit agent manifests, execute sandboxed runs, and retrieve complete JSON execution traces.
-
----
-
-## 📡 The nanos JSON-RPC FFI Protocol Spec
-
-When running JavaScript/TypeScript agents compiled via the SDK, the agent runs in an ultra-restricted Node.js subprocess that communicates with the `nanos` parent host process over synchronous stdout/stdin JSON-RPC 2.0. This allows running standard JS/TS code with zero capability leakage.
-
-### System Calls (Syscalls)
-
-#### 1. `fs_read` (File Read)
-Reads a file's contents from the host filesystem. Subject to the manifest's `permissions.fs_read` whitelist.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "fs_read", "params": ["instruction.txt"], "id": 1 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "The secret code is 42.\n", "id": 1 }
-  ```
-
-#### 2. `fs_write` (File Write)
-Writes contents to a file on the host filesystem. Subject to the manifest's `permissions.fs_write` whitelist.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "fs_write", "params": ["secret.txt", "42"], "id": 2 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "Successfully wrote to file.", "id": 2 }
-  ```
-
-#### 3. `llm_infer` (LLM Inference)
-Triggers a local GPU/LLM inference request. The prompt token count and response generation speed are tracked on the TUI dashboard.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "llm_infer", "params": ["Summarize code: The secret code is 42."], "id": 3 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "The secret code is 42.", "id": 3 }
-  ```
-
-#### 4. `web_get` (Network HTTP Get)
-Performs an HTTP client get request from the host. Subject to the manifest's `permissions.network` boolean.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "web_get", "params": ["https://api.github.com/repos/PandiaJason/nanos"], "id": 4 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "{ \"id\": ... }", "id": 4 }
-  ```
-
-#### 5. `done` (Execution Finished)
-Notifies the host that the agent has accomplished its goal and supplies an execution summary.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "done", "params": ["Agent FFI Loop completed successfully."], "id": 5 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "Done", "id": 5 }
-  ```
-
-#### 6. `get_manifest_goal` (Get Agent Goal)
-Retrieves the target goal description specified in the agent's manifest.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "get_manifest_goal", "params": [], "id": 6 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "Extract the secret key from instruction.txt and write it to secret.txt", "id": 6 }
-  ```
-
-#### 7. `get_manifest_tools` (Get Allowed Tools List)
-Retrieves the list of tools permitted for the agent in the manifest, comma-separated.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "get_manifest_tools", "params": [], "id": 7 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "fs_read,fs_write,done", "id": 7 }
-  ```
-
-#### 8. `agent_send` (Send Inter-Agent Message)
-Sends an asynchronous message to another agent in the fleet message queue.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "agent_send", "params": { "target": "writer", "msg": "secret-code-xyz" }, "id": 8 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "Message sent successfully.", "id": 8 }
-  ```
-
-#### 9. `agent_recv` (Receive Inter-Agent Message)
-Retrieves the next message from the agent's input queue. Blocks or returns if no message is found.
-* **Request:**
-  ```json
-  { "jsonrpc": "2.0", "method": "agent_recv", "params": [], "id": 9 }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "secret-code-xyz", "id": 9 }
-  ```
-
-#### 10. `mcp_call` (Call MCP Server Tool)
-Proxies a tool call request to a specified external MCP server over stdio JSON-RPC.
-* **Request:**
-  ```json
-  {
-    "jsonrpc": "2.0",
-    "method": "mcp_call",
-    "params": {
-      "server": "ping-server",
-      "tool": "ping",
-      "arguments": { "message": "hello" }
-    },
-    "id": 10
-  }
-  ```
-* **Response:**
-  ```json
-  { "jsonrpc": "2.0", "result": "Hello from MCP Ping Server! Arguments received: {\"message\":\"hello\"}", "id": 10 }
-  ```
-
 ## 💻 CLI Command Reference
 
 `nanos` is packaged as a single, compiled binary that manages everything from local runs to multi-agent fleets and network services.
@@ -324,32 +100,23 @@ nanos <COMMAND> [OPTIONS]
 | **`dashboard`** | Launch the real-time TUI dashboard and Time-Travel debug console | `nanos dashboard examples/fleet.nano` |
 | **`bench`** | Run a native FFI latency benchmark against the LLM model | `nanos bench examples/agent.nano` |
 
-For detailed help and arguments for any subcommand, append `--help`:
-```bash
-nanos run --help
-nanos serve --help
-```
-
 ---
 
 ## 🚀 Quick Start
 
 ### 1. Prerequisites
 Ensure you have the following installed on your host:
-* Rust & Cargo (MSRV 1.75+)
-* Node.js (v18+ for compiling, v20+ with permission support is recommended for the JS sandbox runner)
-* **Ollama** running locally. Pull the target LLM model before running the agent:
-  ```bash
-  ollama pull qwen2.5-coder:1.5b
-  ```
+*   Rust & Cargo (MSRV 1.75+)
+*   Node.js (v18+ for compiling, v20+ for the JS sandbox runner)
+*   **Ollama** running locally. Pull the model before running:
+    ```bash
+    ollama pull qwen2.5-coder:1.5b
+    ```
 
 ### 2. Build the Nanos Engine
 Clone and compile the native runtime binary:
 ```bash
-# Clone the repository
 git clone https://github.com/PandiaJason/nanos && cd nanos
-
-# Build the nanos runtime CLI
 cargo build --release
 ```
 
@@ -359,18 +126,16 @@ Build the default Rust agent core into WebAssembly:
 # Compile core agent to WASM target
 cd nanos-core-agent && cargo build --target wasm32-unknown-unknown && cd ..
 
-# Setup example file
+# Setup example file and execute
 cp examples/instruction.txt .
-
-# Execute the agent manifest
 ./target/release/nanos run examples/agent.nano
 ```
-Upon run, the engine will boot the sandbox, map model weights, load the compiled Rust agent binary (`nanos-core-agent/target/wasm32-unknown-unknown/debug/nanos_core_agent.wasm`), and safely execute it.
 
 ---
 
 ### 4. Option B: Write, Compile & Run a JS/TS Agent
-`nanos` provides a high-level SDK that lets you write agents in TypeScript/JavaScript, compile them into WASM dynamic bundles, and execute them under the sandboxed host router.
+
+Use the custom compiler toolchain and TypeScript SDK (`nanos-sdk`) to bundle your TS scripts into secure WebAssembly.
 
 #### Write the agent code (`examples/test_agent.ts`):
 ```typescript
@@ -379,17 +144,11 @@ import { fs, llm, agent } from '../nanos-sdk/index.js';
 export async function run() {
   console.log("TS Agent started!");
   const goal = await agent.getGoal();
-  console.log("TS Goal received:", goal);
-
+  
   const inputData = await fs.readFile("instruction.txt");
-  console.log("TS Read instruction.txt:", inputData);
-
   const response = await llm.infer(`Summarize code: ${inputData}`);
-  console.log("TS LLM Inference result:", response);
-
   await fs.writeFile("secret.txt", response);
-  console.log("TS Wrote secret.txt");
-
+  
   await agent.done("TS FFI Loop completed successfully.");
 }
 
@@ -399,90 +158,27 @@ run().catch(err => {
 });
 ```
 
-#### Compile it:
-Compile the TypeScript code to a WASM bundle package using the custom `nanos-compile.js` tool:
+#### Compile and execute it:
 ```bash
+# Compile TS to WASM
 node nanos-sdk/bin/nanos-compile.js examples/test_agent.ts --out dist/test_agent.wasm --engine bundle
-```
 
-#### Run it:
-Define the JS agent manifest configuration (`examples/agent_js.nano`):
-```yaml
-name: "nanos-js-agent"
-model:
-  provider: "ollama"
-  model_name: "qwen2.5-coder:0.5b"
-  context_window: 4096
-resources:
-  memory: "512MB"
-  max_steps: 10
-permissions:
-  fs_read:
-    - "instruction.txt"
-  fs_write:
-    - "secret.txt"
-binary: "dist/test_agent.wasm"
-goal: "Extract the secret key from instruction.txt and write it to secret.txt"
-```
-
-Then run the sandboxed JS/TS agent:
-```bash
-# Setup instruction file
-cp examples/instruction.txt .
-
-# Execute
+# Run under the sandbox manifest configuration
 ./target/release/nanos run examples/agent_js.nano
 ```
 
 ---
 
-### 5. Run as an HTTP Daemon API
-Expose `nanos` as a background HTTP daemon using `nanos serve`. This allows developers to trigger sandboxed agent execution programmatically via a RESTful API:
+### 5. Launch the Visual Web Debugger
+Expose `nanos` as an HTTP daemon and launch the premium visual dashboard companion:
 ```bash
-# Start the daemon on port 8080 (default)
 ./target/release/nanos serve --port 8080 --host 127.0.0.1
 ```
-
-Now, execute sandboxed agent workflows using simple `curl` commands or HTTP libraries from Python, Node.js, Go, etc.:
-```bash
-curl -X POST http://localhost:8080/v1/run \
-  -H "Content-Type: application/json" \
-  -d '{
-    "name": "nanos-agent",
-    "model": {
-      "provider": "ollama",
-      "model_name": "qwen2.5-coder:0.5b",
-      "context_window": 4096
-    },
-    "resources": {
-      "memory": "256MB",
-      "max_steps": 10
-    },
-    "permissions": {
-      "fs_read": ["instruction.txt"],
-      "fs_write": ["secret.txt"]
-    },
-    "tools": ["fs_read", "fs_write"],
-    "goal": "Read instruction.txt, extract the INSTALLATION_SECRET_KEY, write ONLY the key to secret.txt, then call done."
-  }'
-```
-
-The daemon responds instantly with a JSON payload containing the complete step-by-step execution trace logs and outcomes.
-
----
-
-### 6. Launch the Fleet Dashboard & Interactive TUI
-If you want to view real-time multi-agent fleet orchestration or play with the Time-Travel Debugger, launch the interactive TUI dashboard:
-
-```bash
-./target/release/nanos dashboard examples/fleet.nano
-```
+Open `http://localhost:8080` in your browser. Inspect running statuses, step latencies, peak memory consumption, and **click on any step to trigger a Time-Travel Divergent Replay**!
 
 <p align="center">
-  <img src="assets/nanos_dashboard_showcase.png" alt="nanos TUI Dashboard" width="750">
+  <img src="assets/nanos_dashboard_showcase.png" alt="nanos Dashboard" width="750">
 </p>
-
-Once execution finishes, choose a step index from the trace history to inject a mocked observation (e.g. mock a tool failure) and spawn a divergent execution replay!
 
 ---
 
@@ -508,6 +204,8 @@ permissions:
 binary: "dist/test_agent.wasm" # Target agent compilation binary
 goal: "Extract the secret..." # Mission statement of the agent
 ```
+
+For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification Document](docs/ffi-spec.md).
 
 ---
 
