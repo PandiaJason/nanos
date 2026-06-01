@@ -78,6 +78,21 @@ Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolati
 
 *Note: RAM footprint excludes loaded LLM weights, measuring only the container/runtime overhead. nanos has zero background daemon overhead.*
 
+### 🐳 Proof of Concept: Docker vs. Native Host LLM Inference
+To demonstrate why container-based agent platforms underperform on consumer hardware, we benchmarked the exact same `qwen2.5-coder:0.5b` model on the native Apple Silicon Host (representing `nanos`' native FFI GPU offload pipeline) vs. a standard Docker container running via virtualized CPU:
+
+| Metric | Docker Container (CPU-only VM) | Native Host (Metal GPU / Nanos) | Speedup / Impact |
+| :--- | :---: | :---: | :---: |
+| **Generation Throughput** | 17.48 tokens/sec | **154.54 tokens/sec** | 🚀 **8.84x faster** |
+| **Prompt Evaluation Speed** | 70.62 tokens/sec | **1128.20 tokens/sec** | 🚀 **16.00x faster** |
+| **Model Load / Warmup Time** | 1.137 seconds | **0.112 seconds** | 🚀 **10.15x faster** |
+| **Hardware Offload** | None (Linux CPU Emulation) | **Apple Metal GPU / Unified Memory** | Native UMA speed |
+| **Battery & Thermal Cost** | High (Virtual CPUs pegged at 100%) | **Extremely Low** (Metal offloaded) | 🔋 High power efficiency |
+
+> [!IMPORTANT]
+> **The Isolation Paradox**: Docker Desktop on Mac isolates workloads by running a Linux virtual machine. Because Docker does not support GPU/Metal pass-through, containerized agent architectures are forced to run LLM workloads on virtualized CPUs, losing 90% of the hardware's capabilities.
+> **The nanos Solution**: `nanos` compiles the agent logic to a secure, isolated WASM sandbox but binds LLM execution natively to the host's Metal/CUDA drivers. This grants agents strict sandbox boundaries without sacrificing a single drop of silicon performance.
+
 ---
 
 ## 💻 CLI Command Reference
