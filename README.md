@@ -242,13 +242,57 @@ For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification
 
 ---
 
-## 🆚 Comparison Matrix: Why nanos?
+## 🆚 Architectural Comparison: nanos vs. LlamaEdge / WasmEdge
+
+Unlike WebAssembly projects like **LlamaEdge** or **WasmEdge** which package the LLM itself into WASM to expose it as an HTTP web server, `nanos` focuses entirely on sandboxing the **agent logic** while letting inference run natively on host silicon.
+
+| Dimension | **LlamaEdge / WasmEdge** 🌐 | **nanos** ⚡ |
+| :--- | :--- | :--- |
+| **Core Paradigm** | **"LLM-as-a-Service"** (Web Server Model) | **"Microkernel OS"** (In-Process Syscall Model) |
+| **Interface Boundary** | Localhost HTTP REST Sockets (JSON-RPC) | Memory Boundary (Direct FFI Pointer Passing) |
+| **Agent / LLM Relation** | Agent runs on the host, querying the LLM running inside WasmEdge over HTTP. | Agent runs inside the WASM sandbox, calling the host LLM via in-process FFI. |
+| **Tool Execution Latency**| **~348ms** (TCP stack, serialization, loopback routing) | **< 1ms** (Zero-copy memory pointer sharing) |
+| **Target Use Case** | Serving LLMs as isolated cloud web backends. | Executing local, secure, low-latency AI agents. |
+
+### 🛠️ The Architectural Difference
+
+1. **The Web Server Model (LlamaEdge)**:
+   ```
+   +------------+                  +------------------+                  +-------------+
+   | Host Agent | --(HTTP/JSON)--> |  LlamaEdge WASM  | --(WASI-NN API)--> | host GPU/C+ |
+   | (Py / JS)  | <-- (REST API) --|  (HTTP Server)   |                    +-------------+
+   +------------+                  +------------------+
+   ```
+   Every step of the agent's action loop requires network translation, JSON parsing, and HTTP overhead.
+
+2. **The Microkernel Syscall Model (nanos)**:
+   ```
+   +-------------------------------------------------------+
+   |                     NANOS PROCESS                     |
+   |                                                       |
+   |  +---------------------+                              |
+   |  |  WASM Agent Sandbox | (User Space Agent)            |
+   |  +----------+----------+                              |
+   |             |                                         |
+   |             | In-Process FFI Pointer Pass (`llm_infer`)|
+   |             v                                         |
+   |  +---------------------+                              |
+   |  |     Rust Host       | (Kernel Space Services)       |
+   |  |  (Metal/CUDA/Tool)  |                              |
+   |  +---------------------+                              |
+   +-------------------------------------------------------+
+   ```
+   The agent logic is isolated in user space, but LLM inference and tool execution run in kernel space on native host bindings. The boundary is crossed in microseconds via direct pointer passing, completely bypassing loopback network stacks.
+
+---
+
+## 🆚 General Comparison Matrix
 
 | Feature | `nanos` ⚡ | E2B | LangChain | Docker + Python |
 | :--- | :--- | :--- | :--- | :--- |
 | **Cold Start** | **< 3ms** | ~2s | ~3s | ~30s |
 | **RAM Overhead**| **~39MB** | ~200MB | ~500MB | ~450MB |
-| **Sandbox** | **WASM hardware-isolated** | Cloud VM container | None | Host container |
+| **Sandbox** | **WASM process-isolated** | Cloud VM container | None | Host container |
 | **GPU Access** | **Direct Metal / CUDA** | ❌ None | ❌ None | Manual configuration |
 | **Air-Gapped** | **✅ Yes** | ❌ No (Cloud only) | ❌ No | Partial |
 | **Binary Size** | **Single ~23MB binary** | N/A | `pip install` | `docker pull` |
