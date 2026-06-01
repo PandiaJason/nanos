@@ -11,6 +11,10 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=for-the-badge" alt="License"></a>
   </p>
 
+  <br>
+  <img src="assets/nanos_architecture_overview.png" alt="nanos Architecture Overview" width="850">
+  <br>
+
   <h3>50x RAM Reduction (~39MB RSS vs 2GB+ VM) · &lt; 3ms Sandbox Boot · Zero Docker · Zero Python</h3>
   <p><b>Just the agent, the weights, and the silicon. Serving WASM-sandboxed agents via CLI, HTTP API, TUI, or Web Debugger.</b></p>
 </div>
