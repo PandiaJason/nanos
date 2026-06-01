@@ -1,7 +1,7 @@
 {
   "name": "nanos",
   "version": "0.1.0",
-  "description": "Lightweight, hardware-isolated WebAssembly micro-runtime for sandboxed AI agents with native GPU (Metal & CUDA) offload",
+  "description": "Lightweight, process-isolated WebAssembly micro-runtime for sandboxed AI agents with native GPU (Metal & CUDA) offload",
   "dependencies": {
     "esbuild": "^0.28.0"
   }

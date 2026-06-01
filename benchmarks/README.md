@@ -4,7 +4,7 @@ This directory details the exact methodology, hardware configuration, and measur
 
 ---
 
-## 💻 Benchmark Environment
+## Benchmark Environment
 
 *   **Machine**: Apple M1 Pro (8 CPU Cores, 14 GPU Cores)
 *   **Memory**: 16 GB Unified Memory (UMA)
@@ -14,13 +14,13 @@ This directory details the exact methodology, hardware configuration, and measur
 
 ---
 
-## 📈 Metric Explanations & Methodology
+## Metric Explanations & Methodology
 
 ### 1. WASM Sandbox Boot Time (`< 3ms` vs `~7,500ms` Docker VM)
 *   **How it was measured**: 
     *   **nanos WASM Boot**: Measured the elapsed time from loading the pre-compiled guest agent WASM bytes to the invocation of the first guest system call (FFI `console.log` or file check).
     *   **Docker VM Boot**: Measured the time elapsed from invoking `docker run` until the containerized process responded to its first HTTP/API check.
-*   **💡 HN Pre-emption (Warm vs. Cold Engine)**:
+*   **HN Pre-emption (Warm vs. Cold Engine)**:
     *   **Warm Engine (Instance Instantiation)**: **`< 3ms`** (often `1.2ms - 2.5ms`). This represents the time required to create a new `wasmtime::Store` and instantiate the `wasmtime::Instance` from the pre-loaded module.
     *   **Cold Engine (Engine Creation)**: **`~18ms`**. This includes calling `wasmtime::Engine::new()` with compilation settings. In production, `nanos` initializes the `Engine` once on host boot (as a long-lived static singleton) and instantiates sandbox instances within it, so the effective runtime agent boot latency is indeed `<3ms`.
 

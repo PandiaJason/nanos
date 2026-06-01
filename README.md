@@ -1,6 +1,6 @@
 <div align="center">
   <img src="assets/nanos_logo.png" alt="nanos Logo" width="180">
-  <h1>⚡ nanos</h1>
+  <h1>nanos</h1>
   <p><b>The kernel-level LLM and agent sandboxer.</b></p>
 
   <p>
@@ -11,13 +11,13 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=for-the-badge" alt="License"></a>
   </p>
 
-  <h3>📉 50x RAM Reduction (~39MB RSS vs 2GB+ VM) · ⚡ &lt; 3ms Sandbox Boot · Zero Docker · Zero Python</h3>
+  <h3>50x RAM Reduction (~39MB RSS vs 2GB+ VM) · &lt; 3ms Sandbox Boot · Zero Docker · Zero Python</h3>
   <p><b>Just the agent, the weights, and the silicon. Serving WASM-sandboxed agents via CLI, HTTP API, TUI, or Web Debugger.</b></p>
 </div>
 
 ---
 
-## 💡 What is nanos?
+## What is nanos?
 
 **nanos is not a VM, and it is not a container. It is a kernel-level LLM and agent sandboxer.**
 
@@ -26,7 +26,7 @@ Instead of virtualizing an operating system or containerizing a network stack, `
 Rather than deploying agents as bloated virtual machines that talk to tools over HTTP, `nanos` executes tool calls via direct, in-memory **Foreign Function Interface (FFI) pointer passing**. The host and the agent share a zero-copy memory boundary, eliminating JSON serialization latency and local TCP socket overhead.
 ---
 
-## 🌍 A New Paradigm
+## A New Paradigm
 
 nanos is the first open-source runtime to combine all three of these properties simultaneously for local on-device AI agents:
 
@@ -40,7 +40,7 @@ No existing tool combines all three. That is the claim.
 
 ---
 
-## 🚨 The Problem with Current Agent Stacks
+## The Problem with Current Agent Stacks
 
 Every AI agent framework today suffers from massive latency, memory bloat, and security vulnerabilities. A typical stack looks like this:
 
@@ -60,18 +60,18 @@ One binary. One process. No network. No serialization tax.
 
 ---
 
-## ✨ Features
+## Features
 
-*   **🔐 Hardware-Isolated WASM Sandbox**: Every agent runs inside a strict, metered `wasmtime` store with WASM linear memory isolation, fuel limits to prevent infinite loops, and strict memory caps.
-*   **🎮 Native Metal & CUDA GPU Offload**: Model weights are memory-mapped directly onto Apple Metal or Linux CUDA graphics hardware via native `llama.cpp` layers (`--features gpu-cuda`).
-*   **🤖 Multi-Agent Fleet Orchestration**: Orchestrate cooperative multi-agent fleets concurrently sharing a single `LlmEngine` locally via threads or across networks using distributed TCP message bus client/server connections.
-*   **🔌 Universal MCP Tool Proxy**: Bridge standard Model Context Protocol (MCP) servers straight to WASM. Query tools, discover resources, pull prompts, and validate schemas dynamically.
-*   **🕰️ Time-Travel Visual Web Debugger**: Inspect step execution traces, RAM consumption, tokens, and FFI latency. Click to edit observations or prompt variables, and launch divergent replays.
-*   **🛡️ Sandboxed JS/TS SDK Runtime**: Write agents in TypeScript/JavaScript, compile them into WASM dynamic bundles via `nanos-compile.js`, and execute them safely with dynamic host permission rules.
+*   **Hardware-Isolated WASM Sandbox**: Every agent runs inside a strict, metered `wasmtime` store with WASM linear memory isolation, fuel limits to prevent infinite loops, and strict memory caps.
+*   **Native Metal & CUDA GPU Offload**: Model weights are memory-mapped directly onto Apple Metal or Linux CUDA graphics hardware via native `llama.cpp` layers (`--features gpu-cuda`).
+*   **Multi-Agent Fleet Orchestration**: Orchestrate cooperative multi-agent fleets concurrently sharing a single `LlmEngine` locally via threads or across networks using distributed TCP message bus client/server connections.
+*   **Universal MCP Tool Proxy**: Bridge standard Model Context Protocol (MCP) servers straight to WASM. Query tools, discover resources, pull prompts, and validate schemas dynamically.
+*   **Time-Travel Visual Web Debugger**: Inspect step execution traces, RAM consumption, tokens, and FFI latency. Click to edit observations or prompt variables, and launch divergent replays.
+*   **Sandboxed JS/TS SDK Runtime**: Write agents in TypeScript/JavaScript, compile them into WASM dynamic bundles via `nanos-compile.js`, and execute them safely with dynamic host permission rules.
 
 ---
 
-## 🏗️ Architecture: The Microkernel Paradigm
+## Architecture: The Microkernel Paradigm
 
 `nanos` achieves its unique combination of sandbox isolation and native GPU speed by using a **Microkernel-inspired architecture**. Instead of virtualizing the host hardware (like a VM or container), `nanos` virtualizes only the agent's application code space using WebAssembly (WASM).
 
@@ -100,7 +100,48 @@ Instead of compiling the matrix math of heavy LLM runtimes into WASM (which adds
 
 ---
 
-## ⚡ Benchmarks
+## Security & Threat Model
+
+nanos isolates agent execution using WebAssembly linear memory sandboxes and explicit host capability permissions.
+
+### Sandbox Boundaries
+*   **Memory Isolation**: The agent cannot access arbitrary host memory; it is confined to the WASM linear memory heap.
+*   **Syscall Gatekeeping**: The agent cannot invoke host syscalls directly. All requests must go through the FFI boundary.
+*   **Explicit Whitelisting**: Filesystem read/write and network access are disabled by default and must be explicitly whitelisted in the `.nano` manifest.
+*   **Resource Constraints**: Executes under strict fuel (instruction count) limits and physical memory caps to prevent infinite loop resource exhaustion.
+
+### Mitigated Threats
+*   **Prompt-Injection-Driven File Access**: If the agent is tricked by prompt injection into reading or writing system files, the host FFI gatekeeper blocks the request unless it matches the manifest's whitelist.
+*   **Accidental System Modification**: Bugs in agent code cannot modify files or execute arbitrary shell commands on the host.
+*   **Runaway Agent Loops**: Malicious or runaway loops are automatically halted when the guest runs out of allotted WASM fuel.
+
+### Out of Scope / Non-Goals
+*   Malicious native host extensions or compromises of the host process itself.
+*   Kernel-level compromises of the host OS.
+*   Hardware-level side-channel attacks (e.g., Spectre, Meltdown).
+*   Unpatched zero-day vulnerabilities inside the underlying WASM compilation runtime (wasmtime).
+
+---
+
+## Why WebAssembly (WASM)?
+
+We chose WebAssembly as the compilation target for agents because it provides the exact primitives needed to build a secure, lightweight microkernel layer:
+*   **Deterministic Memory**: WASM linear memory layouts are strictly bounded, ensuring the guest program cannot read or write outside its allocated heap.
+*   **Instruction Metering (Fuel)**: We can measure CPU execution instruction by instruction, allowing us to abort execution if an agent gets stuck in an infinite loop.
+*   **Portable Compilation**: Write your agent in TypeScript, JavaScript, Rust, or Go; they compile down to standard portable WASM bytecode.
+*   **Sub-Millisecond Boot**: Instantiating a WASM module is a simple host heap allocation rather than booting an operating system kernel.
+
+---
+
+## Why Not Containers?
+
+Traditional container technologies (Docker, LXC, gVisor) isolate processes by virtualizing kernel namespaces and resource groups:
+*   **Different Goals**: Containers isolate complete software stacks (operating system libraries, daemons, virtual network bridges). nanos isolates only the *agent execution logic* while keeping the heavy resources (weights, GPU memory) shared natively on the host.
+*   **Hardware Barrier**: Containerization layers and hypervisors block direct access to proprietary local hardware interfaces (like macOS Metal and the Apple Neural Engine), forcing CPU emulation. By separating the sandbox from inference, nanos retains full hardware speed.
+
+---
+
+## Benchmarks
 
 Here is the empirical proof of why the `nanos` architecture is a game-changer for agent deployment.
 
@@ -109,9 +150,9 @@ Here is the empirical proof of why the `nanos` architecture is a game-changer fo
 
 | Metric / Stack | Docker Desktop VM + Python | **nanos (WASM + Host FFI)** | **Delta** | **How Verified** |
 | :--- | :---: | :---: | :---: | :--- |
-| **RAM Footprint** | ~2,000+ MB | **~39 MB** | 📉 **50x smaller** | Checked peak RSS via `ps` on host vs Docker Desktop minimum VM allocation. |
-| **Cold Start** | ~7,500 ms | **< 3 ms** | 🚀 **2500x faster** | Measured sandbox configuring + boot time from instant of launch. |
-| **Tool Execution** | ~348 ms | **< 1 ms** | ⚡ **300x faster** | WASM FFI syscall invocation (e.g. `fs_read`) vs Docker container routing. |
+| **RAM Footprint** | ~2,000+ MB | **~39 MB** | **50x smaller** | Checked peak RSS via `ps` on host vs Docker Desktop minimum VM allocation. |
+| **Cold Start** | ~7,500 ms | **< 3 ms** | **2500x faster** | Measured sandbox configuring + boot time from instant of launch. |
+| **Tool Execution** | ~348 ms | **< 1 ms** | **300x faster** | WASM FFI syscall invocation (e.g. `fs_read`) vs Docker container routing. |
 *Note: RAM footprint excludes loaded LLM weights, measuring only the container/runtime overhead. nanos has zero background daemon overhead. Cold start measures WASM sandbox configuration only; model load adds ~112ms (native Metal) vs ~1,137ms (Docker CPU) — see Section 2.*
 
 ### 2. Local LLM Inference Performance (Metal GPU vs. Virtualized CPU)
@@ -119,22 +160,22 @@ To demonstrate why container-based agent platforms underperform on consumer hard
 
 | Metric | Docker Container (CPU-only VM) | Native Host (Metal GPU / Nanos) | Speedup / Impact |
 | :--- | :---: | :---: | :---: |
-| **Generation Throughput** | 17.48 tokens/sec | **154.54 tokens/sec** | 🚀 **8.84x faster** |
-| **Prompt Evaluation Speed** | 70.62 tokens/sec | **1128.20 tokens/sec** | 🚀 **16.00x faster** |
-| **Model Load / Warmup Time** | 1.137 seconds | **0.112 seconds** | 🚀 **10.15x faster** |
+| **Generation Throughput** | 17.48 tokens/sec | **154.54 tokens/sec** | **8.84x faster** |
+| **Prompt Evaluation Speed** | 70.62 tokens/sec | **1128.20 tokens/sec** | **16.00x faster** |
+| **Model Load / Warmup Time** | 1.137 seconds | **0.112 seconds** | **10.15x faster** |
 | **Hardware Offload** | None (Linux CPU Emulation) | **Apple Metal GPU / Unified Memory** | Native UMA speed |
-| **Battery & Thermal Cost** | High (Virtual CPUs pegged at 100%) | **Extremely Low** (Metal offloaded) | 🔋 High power efficiency |
+| **Battery & Thermal Cost** | High (Virtual CPUs pegged at 100%) | **Extremely Low** (Metal offloaded) | High power efficiency |
 
 ### 3. The macOS Local Agent Dilemma (Security vs. Performance)
 For developers building and running AI agents locally on MacBooks (Apple Silicon M1/M2/M3/M4), executing agents has historically forced a compromised choice:
 
-*   **🐢 The Docker Route (Secure but Slow)**: Running the agent inside a Docker container isolates the process but forces the LLM to run on CPU-only emulation (since Docker Desktop lacks Metal pass-through). This results in extremely slow speeds (**~17 tokens/sec**), high heat, loud fans, and rapid battery drain.
-*   **⚠️ The Bare-Metal Route (Fast but Dangerous)**: Running the agent directly in your host macOS terminal grants full GPU Metal speeds (**~154 tokens/sec**), but provides zero isolation. A buggy or malicious command generated by the LLM can access your private ssh keys, steal documents, or corrupt your system.
-*   **⚡ The nanos Route (Secure AND Fast)**: By running agent logic in a lightweight WASM sandbox and delegating LLM inference natively to the host's Metal/CUDA drivers, `nanos` delivers the security of a container with the raw hardware speed and power efficiency of native execution.
+*   **The Docker Route (Secure but Slow)**: Running the agent inside a Docker container isolates the process but forces the LLM to run on CPU-only emulation (since Docker Desktop lacks Metal pass-through). This results in extremely slow speeds (**~17 tokens/sec**), high heat, loud fans, and rapid battery drain.
+*   **The Bare-Metal Route (Fast but Dangerous)**: Running the agent directly in your host macOS terminal grants full GPU Metal speeds (**~154 tokens/sec**), but provides zero isolation. A buggy or malicious command generated by the LLM can access your private ssh keys, steal documents, or corrupt your system.
+*   **The nanos Route (Secure AND Fast)**: By running agent logic in a lightweight WASM sandbox and delegating LLM inference natively to the host's Metal/CUDA drivers, `nanos` delivers the security of a container with the raw hardware speed and power efficiency of native execution.
 
 ---
 
-## 💻 CLI Command Reference
+## CLI Command Reference
 
 `nanos` is packaged as a single, compiled binary that manages everything from local runs to multi-agent fleets and network services.
 
@@ -156,7 +197,7 @@ nanos <COMMAND> [OPTIONS]
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Prerequisites
 Ensure you have the following installed on your host:
@@ -270,11 +311,11 @@ For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification
 
 ---
 
-## 🆚 Architectural Comparison: nanos vs. LlamaEdge / WasmEdge
+## Architectural Comparison: nanos vs. LlamaEdge / WasmEdge
 
 Unlike WebAssembly projects like **LlamaEdge** or **WasmEdge** which package the LLM itself into WASM to expose it as an HTTP web server, `nanos` focuses entirely on sandboxing the **agent logic** while letting inference run natively on host silicon.
 
-| Dimension | **LlamaEdge / WasmEdge** 🌐 | **nanos** ⚡ |
+| Dimension | **LlamaEdge / WasmEdge** 🌐 | **nanos** |
 | :--- | :--- | :--- |
 | **Core Paradigm** | **"LLM-as-a-Service"** (Web Server Model) | **"Microkernel OS"** (In-Process Syscall Model) |
 | **Interface Boundary** | Localhost HTTP REST Sockets (JSON-RPC) | Memory Boundary (Direct FFI Pointer Passing) |
@@ -314,9 +355,9 @@ Unlike WebAssembly projects like **LlamaEdge** or **WasmEdge** which package the
 
 ---
 
-## 🆚 General Comparison Matrix
+## General Comparison Matrix
 
-| Feature | `nanos` ⚡ | E2B | LangChain | Docker + Python |
+| Feature | `nanos` | E2B | LangChain | Docker + Python |
 | :--- | :--- | :--- | :--- | :--- |
 | **Cold Start** | **< 3ms** | ~2s | ~3s | ~30s |
 | **RAM Overhead**| **~39MB** | ~200MB | ~500MB | ~450MB |

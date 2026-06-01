@@ -2,7 +2,7 @@
 name = "nanos"
 version = "0.1.0"
 edition = "2024"
-description = "Lightweight, hardware-isolated WebAssembly micro-runtime for sandboxed AI agents with native GPU (Metal & CUDA) offload"
+description = "Lightweight, process-isolated WebAssembly micro-runtime for sandboxed AI agents with native GPU (Metal & CUDA) offload"
 license = "Apache-2.0"
 
 [lib]
