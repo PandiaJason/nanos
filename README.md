@@ -54,7 +54,7 @@ Every arrow represents latency, memory consumption, and a larger attack surface.
 
 > `nanos run agent.nano → WASM sandbox boots (< 50ms) → weights resident in GPU memory → tool calls via FFI pointer pass (zero copy) → done.`
 
-One binary. One process. No network. No serialization tax.
+One runtime. No localhost tool daemons. No JSON RPC loops. No serialization tax.
 
 <p align="center">
   <img src="assets/nanos_stack_comparison.png" alt="nanos Stack Comparison" width="750">
@@ -88,7 +88,7 @@ The runtime is split into two strictly separated execution spaces:
 
 ### 2. In-Process Syscall Loop (FFI Memory Boundary)
 In traditional agent stacks, tool execution requires local TCP loops, loopback routing, and HTTP JSON serialization. `nanos` treats tool calls like Operating System **syscalls**:
-1.  **Shared Memory**: The host allocates a linear segment of RAM for the WASM guest sandbox. The host runtime can directly access the guest's WASM linear memory buffer through controlled runtime APIs, enabling zero-copy pointer exchanges.
+1.  **Shared Memory**: The host allocates a linear segment of RAM for the WASM guest sandbox. The host runtime can directly access the guest's WASM linear memory buffer through controlled runtime APIs, enabling direct linear-memory argument passing without localhost socket serialization.
 2.  **Pointer Passing**: When the agent calls a tool like `fs.readFile("data.txt")`, the WASM guest writes the path into its linear memory and executes an FFI syscall (`nanos_fs_read(ptr, len)`).
 3.  **Instant Execution**: The host intercepts the syscall, reads the arguments directly from the sandbox memory offset, validates the manifest permissions, executes the tool natively, writes the result back to WASM memory, and resumes guest execution. 
 4.  **Zero-Copy Speed**: This whole process completes in **microseconds (< 1ms)** because no network sockets are opened and no JSON serialization occurs.
