@@ -11,8 +11,8 @@
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=for-the-badge" alt="License"></a>
   </p>
 
-  <h3>📉 50x RAM Reduction (~39MB RSS vs 2GB+ VM) · ⚡ < 3ms Sandbox Boot · zero docker · zero python</h3>
-  <p><b>Just the agent, the weights, and the silicon.</b></p>
+  <h3>📉 50x RAM Reduction (~39MB RSS vs 2GB+ VM) · ⚡ &lt; 3ms Sandbox Boot · Zero Docker · Zero Python</h3>
+  <p><b>Just the agent, the weights, and the silicon. Serving WASM-sandboxed agents via CLI, HTTP API, or TUI.</b></p>
 </div>
 
 ---
@@ -23,7 +23,7 @@
 
 | Status | Features | Technical Justification & Current State |
 | :--- | :--- | :--- |
-| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal GPU Offload (macOS)**<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** (`fs`, `llm`, `web`) <br>• **JS/TS SDK Compiler**<br>• **Multi-Agent Fleet Orchestration**<br>• **MCP stdio JSON-RPC Client Proxy** | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU mapping compile and run cleanly today. System calls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`, `web_get`) run entirely in-memory with zero network overhead. JS/TS compilation via `nanos-compile.js` and Node sandbox dynamic permission routing is fully functional. Multi-agent thread orchestration communicating over the host message bus via FFI (`agent_send` / `agent_recv`) is fully tested and working. Spawning and executing MCP server stdio tools over JSON-RPC 2.0 is fully implemented and tested. |
+| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal GPU Offload (macOS)**<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** (`fs`, `llm`, `web`) <br>• **JS/TS SDK Compiler**<br>• **Multi-Agent Fleet Orchestration**<br>• **MCP stdio JSON-RPC Client Proxy**<br>• **HTTP API Daemon (`nanos serve`)** | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU mapping compile and run cleanly today. System calls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`, `web_get`) run entirely in-memory with zero network overhead. JS/TS compilation via `nanos-compile.js` and Node sandbox dynamic permission routing is fully functional. Multi-agent thread orchestration communicating over the host message bus via FFI (`agent_send` / `agent_recv`) is fully tested and working. Spawning and executing MCP server stdio tools over JSON-RPC 2.0 is fully implemented and tested. The HTTP API Daemon (`nanos serve`) exposes status, run, and orchestrate endpoints cleanly. |
 | **🔧 In Progress** | • **Distributed Fleet Nodes**<br>• **Full MCP Capability Compliance** | Extending thread-based multi-agent execution to distributed network nodes (e.g. over TCP/gRPC). Adding full protocol capabilities to the MCP Proxy client (such as standard prompts, dynamic resources discovery, and validation hooks). |
 | **📋 Planned Roadmap** | • **NPM Registry Package (`nanos-sdk`)**<br>• **Time-Travel Debugger GUI**<br>• **Linux CUDA Backend** | Publishing `nanos-sdk` to NPM for easier global installation. The interactive time-travel debugger works in CLI mode inside the dashboard; a visual web GUI debugger is planned. Native CUDA GPU mapping for Linux is on the roadmap. |
 
@@ -178,6 +178,10 @@ Bridge standard Model Context Protocol (MCP) servers straight to WASM.
 ### 🛡️ Sandboxed `eval_js` Syscall (Working)
 WASM agents can execute dynamic JavaScript code safely via a dedicated host syscall.
 * **Current state:** Enforced via Node.js `--permission` (or `--experimental-permission`) flags, denying filesystem, network, and child process access by default. Capped by execution timeouts and memory heap limits.
+
+### 📡 HTTP API Daemon Mode (Working)
+Run `nanos` as a background system daemon (similar to `dockerd` or `ollama serve`) that exposes status, execution, and orchestration endpoints via a lightweight, high-performance Axum HTTP router.
+* **Current state:** Fully integrated. Allows external services (Node, Go, Python, etc.) to securely submit agent manifests, execute sandboxed runs, and retrieve complete JSON execution traces.
 
 ---
 
@@ -412,7 +416,42 @@ cp examples/instruction.txt .
 
 ---
 
-### 5. Launch the Fleet Dashboard & Interactive TUI
+### 5. Run as an HTTP Daemon API
+Expose `nanos` as a background HTTP daemon using `nanos serve`. This allows developers to trigger sandboxed agent execution programmatically via a RESTful API:
+```bash
+# Start the daemon on port 8080 (default)
+./target/release/nanos serve --port 8080 --host 127.0.0.1
+```
+
+Now, execute sandboxed agent workflows using simple `curl` commands or HTTP libraries from Python, Node.js, Go, etc.:
+```bash
+curl -X POST http://localhost:8080/v1/run \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "nanos-agent",
+    "model": {
+      "provider": "ollama",
+      "model_name": "qwen2.5-coder:0.5b",
+      "context_window": 4096
+    },
+    "resources": {
+      "memory": "256MB",
+      "max_steps": 10
+    },
+    "permissions": {
+      "fs_read": ["instruction.txt"],
+      "fs_write": ["secret.txt"]
+    },
+    "tools": ["fs_read", "fs_write"],
+    "goal": "Read instruction.txt, extract the INSTALLATION_SECRET_KEY, write ONLY the key to secret.txt, then call done."
+  }'
+```
+
+The daemon responds instantly with a JSON payload containing the complete step-by-step execution trace logs and outcomes.
+
+---
+
+### 6. Launch the Fleet Dashboard & Interactive TUI
 If you want to view real-time multi-agent fleet orchestration or play with the Time-Travel Debugger, launch the interactive TUI dashboard:
 
 ```bash
