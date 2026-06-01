@@ -189,9 +189,12 @@ Every agent is defined by a `.nano` YAML configuration file:
 ```yaml
 name: "nanos-js-agent"       # Name of the agent instance
 model:
-  provider: "ollama"         # LLM Provider: 'ollama' | 'llama.cpp' (local GGUF)
-  model_name: "qwen2.5..."   # Model name or file path
+  provider: "ollama"         # LLM Provider: 'ollama' | 'openai' | 'local' (native GGUF)
+  model_name: "qwen2.5-coder:0.5b" # Model name (for ollama/openai)
+  path: "models/qwen.gguf"   # GGUF local model path (required for 'local' provider)
   context_window: 4096       # Context size limit
+  api_url: "http://..."      # Custom API URL (optional)
+  api_key: "sk-..."          # Custom API Key (optional)
 resources:
   memory: "512MB"            # Sandbox physical RAM heap limit
   max_steps: 10              # Maximum FFI syscall loop iterations allowed
@@ -201,6 +204,15 @@ permissions:
   fs_write:                  # Whitelist of files or glob patterns the agent can write
     - "secret.txt"
   network: false             # Disable or enable external TCP socket access
+mcp_servers:                 # Whitelist of external Model Context Protocol stdio servers
+  - name: "ping-server"
+    command: "node"
+    args:
+      - "path/to/server.js"
+tools:                       # List of tools permitted for the agent (e.g. fs_read, fs_write, mcp_call, done)
+  - "fs_read"
+  - "fs_write"
+  - "mcp_call"
 binary: "dist/test_agent.wasm" # Target agent compilation binary
 goal: "Extract the secret..." # Mission statement of the agent
 ```
