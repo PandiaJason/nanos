@@ -112,8 +112,7 @@ Here is the empirical proof of why the `nanos` architecture is a game-changer fo
 | **RAM Footprint** | ~2,000+ MB | **~39 MB** | 📉 **50x smaller** | Checked peak RSS via `ps` on host vs Docker Desktop minimum VM allocation. |
 | **Cold Start** | ~7,500 ms | **< 3 ms** | 🚀 **2500x faster** | Measured sandbox configuring + boot time from instant of launch. |
 | **Tool Execution** | ~348 ms | **< 1 ms** | ⚡ **300x faster** | WASM FFI syscall invocation (e.g. `fs_read`) vs Docker container routing. |
-
-*Note: RAM footprint excludes loaded LLM weights, measuring only the container/runtime overhead. nanos has zero background daemon overhead.*
+*Note: RAM footprint excludes loaded LLM weights, measuring only the container/runtime overhead. nanos has zero background daemon overhead. Cold start measures WASM sandbox configuration only; model load adds ~112ms (native Metal) vs ~1,137ms (Docker CPU) — see Section 2.*
 
 ### 2. Local LLM Inference Performance (Metal GPU vs. Virtualized CPU)
 To demonstrate why container-based agent platforms underperform on consumer hardware, we benchmarked the exact same `qwen2.5-coder:0.5b` model on the native Apple Silicon Host (representing `nanos`' native host FFI GPU offload pipeline) vs. a standard Docker container running via virtualized CPU:

@@ -27,7 +27,7 @@ Writes contents to a file on the host filesystem. Subject to the manifest's `per
   ```
 
 ### 3. `llm_infer` (LLM Inference)
-Triggers a local GPU/LLM inference request. The prompt token count and response generation speed are tracked on the TUI dashboard.
+Triggers a local GPU/LLM inference request. The prompt token count and response generation speed are tracked in the execution logs and visual web debugger.
 * **Request:**
   ```json
   { "jsonrpc": "2.0", "method": "llm_infer", "params": ["Summarize code: The secret code is 42."], "id": 3 }
