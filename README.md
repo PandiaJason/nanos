@@ -56,13 +56,32 @@ One binary. One process. No network. No serialization tax.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture: The Microkernel Paradigm
 
-Instead of isolated HTTP servers, `nanos` uses WebAssembly linear memory isolation. Tool calls pass raw memory pointers across the WASM boundary. A 1MB document and a 10-byte string cost exactly the same: **one pointer offset**.
+`nanos` achieves its unique combination of sandbox isolation and native GPU speed by using a **Microkernel-inspired architecture**. Instead of virtualizing the host hardware (like a VM or container), `nanos` virtualizes only the agent's application code space using WebAssembly (WASM).
 
 <p align="center">
   <img src="assets/nanos_architecture_detail.png" alt="nanos Architecture" width="750">
 </p>
+
+### 1. Separation of Concerns: Guest vs. Host
+The runtime is split into two strictly separated execution spaces:
+*   **User Space (Guest Sandbox)**: This is where the agent logic runs. Guest code is compiled to WebAssembly (JS/TS agents compile along with an optimized QuickJS virtual machine into a single `.wasm` binary). The sandbox has **zero native access** to files, network, or hardware.
+*   **Kernel Space (Host Runtime)**: The native Rust engine. It compiles natively for your specific processor architecture (Apple Silicon ARM64, Linux x86_64, etc.) and has direct access to **Apple Metal APIs**, **Linux CUDA drivers**, and local filesystem/network resources.
+
+### 2. In-Process Syscall Loop (FFI Memory Boundary)
+In traditional agent stacks, tool execution requires local TCP loops, loopback routing, and HTTP JSON serialization. `nanos` treats tool calls like Operating System **syscalls**:
+1.  **Shared Memory**: The host allocates a linear segment of RAM for the WASM guest sandbox. Since they share the same physical address space, the host reads and writes directly to the guest's sandbox memory.
+2.  **Pointer Passing**: When the agent calls a tool like `fs.readFile("data.txt")`, the WASM guest writes the path into its linear memory and executes an FFI syscall (`nanos_fs_read(ptr, len)`).
+3.  **Instant Execution**: The host intercepts the syscall, reads the arguments directly from the sandbox memory offset, validates the manifest permissions, executes the tool natively, writes the result back to WASM memory, and resumes guest execution. 
+4.  **Zero-Copy Speed**: This whole process completes in **microseconds (< 1ms)** because no network sockets are opened and no JSON serialization occurs.
+
+### 3. Native GPU Inference Bridge
+Instead of compiling the matrix math of heavy LLM runtimes into WASM (which adds compiler layers and degrades performance), `nanos` keeps the inference engine native to the host:
+1.  When the agent writes `llm.infer("...")`, the WASM guest triggers an FFI syscall: `llm_infer(prompt_ptr, prompt_len)`.
+2.  The Rust host reads the prompt from the shared WASM memory segment.
+3.  The host passes the prompt to its native `LlmEngine` (linked directly to the host's Apple Metal or CUDA drivers).
+4.  The GPU executes the generation natively (**154 tokens/sec** on Metal for Qwen 0.5B) and streams the generated response directly back into the guest's memory.
 
 ---
 
