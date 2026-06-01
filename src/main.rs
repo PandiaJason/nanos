@@ -83,19 +83,6 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Dashboard { manifest } => {
-            let resolved_path = match resolve_manifest(manifest, &["fleet.nano", "agent.nano", "test_e2e.nano"]) {
-                Ok(path) => path,
-                Err(e) => {
-                    error!("{}", e);
-                    std::process::exit(1);
-                }
-            };
-            if let Err(e) = nanos::dashboard::run_dashboard(&resolved_path) {
-                error!("Dashboard failed: {:?}", e);
-                std::process::exit(1);
-            }
-        }
         Commands::Node { connect, name } => {
             info!("nanos node client starting for agent: {}...", name);
             if let Err(e) = nanos::network::start_agent_node(connect, name) {

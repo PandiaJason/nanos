@@ -40,10 +40,6 @@ pub enum Commands {
         #[arg(short, long, default_value = "9090")]
         port: u16,
     },
-    /// View real-time agent execution status and Time-Travel debug console
-    Dashboard {
-        manifest: Option<PathBuf>,
-    },
     /// Connect a remote agent node to a distributed orchestrator
     Node {
         /// Address to connect to, e.g. 127.0.0.1:9090
