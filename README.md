@@ -21,14 +21,16 @@
 
 **nanos is not a VM, and it is not a container. It is a kernel-level LLM and agent sandboxer.**
 
-Instead of virtualizing an operating system or containerizing a network stack, `nanos` acts as a microkernel for AI agents. The native host runtime acts as the kernel space—providing secure, audited access to files, networks, MCP tools, and GPU silicon (Apple Metal/CUDA)—while the agent executes inside a hardware-isolated user-space WebAssembly (WASM) sandbox.
+By isolating only the agent execution logic in a lightweight sandbox while keeping the heavy resource states (model weights, GPU memory allocations) native to the host, `nanos` delivers the security of a container with the raw execution speeds of direct silicon.
 
-Rather than deploying agents as bloated virtual machines that talk to tools over HTTP, `nanos` executes tool calls via direct, in-memory **Foreign Function Interface (FFI) pointer passing**. The host and the agent share a zero-copy memory boundary, eliminating JSON serialization latency and local TCP socket overhead.
+Instead of virtualizing an operating system or containerizing a network stack, `nanos` acts as a microkernel for AI agents. The native host runtime acts as the kernel space—providing secure, audited access to files, networks, MCP tools, and GPU silicon (Apple Metal/CUDA)—while the agent executes inside a capability-isolated user-space WebAssembly (WASM) sandbox.
+
+Rather than deploying agents as bloated virtual machines that talk to tools over HTTP, `nanos` executes tool calls via direct, in-memory **Foreign Function Interface (FFI) pointer passing**. The host and guest communicate through the WASM linear memory region exposed by the runtime, eliminating JSON serialization latency and local TCP socket overhead.
 ---
 
 ## A New Paradigm
 
-nanos is the first open-source runtime to combine all three of these properties simultaneously for local on-device AI agents:
+nanos integrates three capabilities that are rarely combined in open-source local agent runtimes:
 
 | Property | What existed before | What nanos does |
 |---|---|---|
@@ -36,13 +38,13 @@ nanos is the first open-source runtime to combine all three of these properties 
 | **Native Metal/CUDA GPU offload** | llama.cpp bare-metal — but zero isolation | LLM inference runs natively on host GPU |
 | **In-process FFI tool syscalls** | MCP over HTTP/stdio — network round-trip per call | Tools called via zero-copy memory pointer pass |
 
-No existing tool combines all three. That is the claim.
+nanos integrates these capabilities into a single local runtime architecture.
 
 ---
 
 ## The Problem with Current Agent Stacks
 
-Every AI agent framework today suffers from massive latency, memory bloat, and security vulnerabilities. A typical stack looks like this:
+Many current agent stacks trade isolation, latency, and memory efficiency for ease of integration. A typical stack looks like this:
 
 > `Docker (200MB) → Python (2s boot) → pip install langchain (500MB) → MCP server (HTTP daemon) → LLM API (TCP socket, JSON serialize, wait, parse)`
 
@@ -50,7 +52,7 @@ Every arrow represents latency, memory consumption, and a larger attack surface.
 
 **nanos** throws out the entire stack:
 
-> `nanos run agent.nano → WASM sandbox boots (< 50ms) → weights memory-mapped to GPU → tool calls via FFI pointer pass (zero copy) → done.`
+> `nanos run agent.nano → WASM sandbox boots (< 50ms) → weights resident in GPU memory → tool calls via FFI pointer pass (zero copy) → done.`
 
 One binary. One process. No network. No serialization tax.
 
@@ -62,8 +64,8 @@ One binary. One process. No network. No serialization tax.
 
 ## Features
 
-*   **Hardware-Isolated WASM Sandbox**: Every agent runs inside a strict, metered `wasmtime` store with WASM linear memory isolation, fuel limits to prevent infinite loops, and strict memory caps.
-*   **Native Metal & CUDA GPU Offload**: Model weights are memory-mapped directly onto Apple Metal or Linux CUDA graphics hardware via native `llama.cpp` layers (`--features gpu-cuda`).
+*   **Capability-Isolated WASM Sandbox**: Every agent runs inside a strict, metered `wasmtime` store with WASM linear memory isolation, fuel limits to prevent infinite loops, and strict memory caps.
+*   **Native Metal & CUDA GPU Offload**: Model weights are loaded directly into Apple Metal or Linux CUDA graphics memory via native `llama.cpp` layers (`--features gpu-cuda`).
 *   **Multi-Agent Fleet Orchestration**: Orchestrate cooperative multi-agent fleets concurrently sharing a single `LlmEngine` locally via threads or across networks using distributed TCP message bus client/server connections.
 *   **Universal MCP Tool Proxy**: Bridge standard Model Context Protocol (MCP) servers straight to WASM. Query tools, discover resources, pull prompts, and validate schemas dynamically.
 *   **Time-Travel Visual Web Debugger**: Inspect step execution traces, RAM consumption, tokens, and FFI latency. Click to edit observations or prompt variables, and launch divergent replays.
@@ -86,7 +88,7 @@ The runtime is split into two strictly separated execution spaces:
 
 ### 2. In-Process Syscall Loop (FFI Memory Boundary)
 In traditional agent stacks, tool execution requires local TCP loops, loopback routing, and HTTP JSON serialization. `nanos` treats tool calls like Operating System **syscalls**:
-1.  **Shared Memory**: The host allocates a linear segment of RAM for the WASM guest sandbox. Since they share the same physical address space, the host reads and writes directly to the guest's sandbox memory.
+1.  **Shared Memory**: The host allocates a linear segment of RAM for the WASM guest sandbox. The host runtime can directly access the guest's WASM linear memory buffer through controlled runtime APIs, enabling zero-copy pointer exchanges.
 2.  **Pointer Passing**: When the agent calls a tool like `fs.readFile("data.txt")`, the WASM guest writes the path into its linear memory and executes an FFI syscall (`nanos_fs_read(ptr, len)`).
 3.  **Instant Execution**: The host intercepts the syscall, reads the arguments directly from the sandbox memory offset, validates the manifest permissions, executes the tool natively, writes the result back to WASM memory, and resumes guest execution. 
 4.  **Zero-Copy Speed**: This whole process completes in **microseconds (< 1ms)** because no network sockets are opened and no JSON serialization occurs.
@@ -172,6 +174,16 @@ For developers building and running AI agents locally on MacBooks (Apple Silicon
 *   **The Docker Route (Secure but Slow)**: Running the agent inside a Docker container isolates the process but forces the LLM to run on CPU-only emulation (since Docker Desktop lacks Metal pass-through). This results in extremely slow speeds (**~17 tokens/sec**), high heat, loud fans, and rapid battery drain.
 *   **The Bare-Metal Route (Fast but Dangerous)**: Running the agent directly in your host macOS terminal grants full GPU Metal speeds (**~154 tokens/sec**), but provides zero isolation. A buggy or malicious command generated by the LLM can access your private ssh keys, steal documents, or corrupt your system.
 *   **The nanos Route (Secure AND Fast)**: By running agent logic in a lightweight WASM sandbox and delegating LLM inference natively to the host's Metal/CUDA drivers, `nanos` delivers the security of a container with the raw hardware speed and power efficiency of native execution.
+
+### 4. Benchmark Methodology & Reproduction Specifications
+To maintain transparency and allow full scientific reproducibility of the metrics reported above, here is the exact specification of our benchmark design:
+
+*   **Host Environment**: Apple M1 Pro (8 CPU Cores, 14 GPU Cores), 16 GB Unified Memory (UMA), macOS Sonoma 14.x, Rust 1.75+, Wasmtime 45.0.
+*   **Target Model**: `qwen2.5-coder:0.5b` (GGUF Q4_K_M, 397 MB weights).
+*   **Cold Start**: Measured from the instantiation of the `wasmtime::Store` and guest sandbox instance to the execution of the first guest FFI function. Excludes initial host-side `wasmtime::Engine` initialization (which takes ~18ms and runs only once on host boot) and model file load.
+*   **Tool Execution Latency**: Measured the round-trip latency of the `fs_read` syscall execution for a 1 KB payload over 10,000 continuous iterations.
+*   **RSS (Memory Footprint)**: Measured the host process Peak Resident Set Size (RSS) using `ps` on macOS, excluding loaded model weights (to measure runtime overhead independently).
+*   **Docker Baseline**: Tested using Docker Desktop for Mac with a default Linux VM allocation (2 CPUs, 2GB memory). The model was executed inside the VM using `ollama/ollama:latest` with CPU emulation.
 
 ---
 
@@ -362,13 +374,13 @@ Unlike WebAssembly projects like **LlamaEdge** or **WasmEdge** which package the
 | **Cold Start** | **< 3ms** | ~2s | ~3s | ~30s |
 | **RAM Overhead**| **~39MB** | ~200MB | ~500MB | ~450MB |
 | **Sandbox** | **WASM process-isolated** | Cloud VM container | None | Host container |
-| **GPU Access** | **Direct Metal / CUDA** | ❌ None | ❌ None | Manual configuration |
-| **Air-Gapped** | **✅ Yes** | ❌ No (Cloud only) | ❌ No | Partial |
+| **GPU Access** | **Direct Metal / CUDA** | None | None | Manual configuration |
+| **Air-Gapped** | **Yes** | No (Cloud only) | No | Partial |
 | **Binary Size** | **Single ~23MB binary** | N/A | `pip install` | `docker pull` |
 
 ---
 
 <div align="center">
   <b>nanos</b> — the agent doesn't need a cloud. it needs silicon.<br><br>
-  <i>If you find this project valuable, please consider giving it a ⭐ on GitHub!</i>
+  <i>If you find this project valuable, please consider giving it a star on GitHub!</i>
 </div>
