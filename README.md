@@ -196,11 +196,6 @@ Expose `nanos` as an HTTP daemon and launch the premium visual dashboard compani
 ./target/release/nanos serve --port 8080 --host 127.0.0.1
 ```
 Open `http://localhost:8080` in your browser. Inspect running statuses, step latencies, peak memory consumption, and **click on any step to trigger a Time-Travel Divergent Replay**!
-
-<p align="center">
-  <img src="assets/nanos_dashboard_showcase.png" alt="nanos Dashboard" width="750">
-</p>
-
 ---
 
 ## 🛠️ Manifest Reference (`.nano`)
