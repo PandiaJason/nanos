@@ -310,6 +310,31 @@ Proxies a tool call request to a specified external MCP server over stdio JSON-R
   { "jsonrpc": "2.0", "result": "Hello from MCP Ping Server! Arguments received: {\"message\":\"hello\"}", "id": 10 }
   ```
 
+## 💻 CLI Command Reference
+
+`nanos` is packaged as a single, compiled binary that manages everything from local runs to multi-agent fleets and network services.
+
+```bash
+# General usage structure
+nanos <COMMAND> [OPTIONS]
+```
+
+### Subcommands
+
+| Command | Description | Example Usage |
+| :--- | :--- | :--- |
+| **`run`** | Run a single AI agent from a `.nano` manifest | `nanos run examples/agent.nano` |
+| **`serve`** | Serve the agent runtime background daemon over HTTP | `nanos serve --port 8080` |
+| **`orchestrate`** | Orchestrate cooperative multi-agent fleets from a fleet manifest | `nanos orchestrate examples/fleet.nano` |
+| **`dashboard`** | Launch the real-time TUI dashboard and Time-Travel debug console | `nanos dashboard examples/fleet.nano` |
+| **`bench`** | Run a native FFI latency benchmark against the LLM model | `nanos bench examples/agent.nano` |
+
+For detailed help and arguments for any subcommand, append `--help`:
+```bash
+nanos run --help
+nanos serve --help
+```
+
 ---
 
 ## 🚀 Quick Start
