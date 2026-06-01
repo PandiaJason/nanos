@@ -1,5 +1,9 @@
 # Nanos Architecture: A Technical Deep-Dive
 
+<p align="center">
+  <img src="../assets/nanos_architecture_flow.png" alt="Nanos Architecture Flow" width="850">
+</p>
+
 `nanos` is fundamentally a minimalist operating system designed specifically for autonomous AI agents. Unlike standard environments which rely on heavy containerization (Docker) and interpreted languages (Python), `nanos` is written in Rust and utilizes WebAssembly (WASM) for execution isolation and `llama.cpp` for native neural processing.
 
 ## 1. The Kernel (Host Engine)
