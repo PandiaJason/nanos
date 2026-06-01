@@ -1,3 +1,4 @@
+#[allow(dead_code)]
 extern "C" {
     fn fs_read(ptr: *const u8, len: usize, out_ptr: *mut u8, out_max: usize) -> i32;
     fn fs_write(path_ptr: *const u8, path_len: usize, content_ptr: *const u8, content_len: usize, out_ptr: *mut u8, out_max: usize) -> i32;
