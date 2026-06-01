@@ -1,5 +1,5 @@
 {
-  "name": "nanos-sdk",
+  "name": "pandiajason-nanos-sdk",
   "version": "1.0.0",
   "description": "SDK and toolchain to compile TypeScript/JavaScript AI Agents into optimized, secure WASM binaries for nanos OS",
   "type": "module",
