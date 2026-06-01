@@ -17,9 +17,14 @@ pub enum Commands {
         /// Path to the agent.nano manifest file
         manifest: Option<PathBuf>,
     },
-    /// Serve an AI agent via local socket (TODO)
+    /// Serve an AI agent daemon over HTTP
     Serve {
-        manifest: Option<PathBuf>,
+        /// Port to listen on (default: 8080)
+        #[arg(short, long, default_value = "8080")]
+        port: u16,
+        /// Host to bind to (default: 127.0.0.1)
+        #[arg(short, long, default_value = "127.0.0.1")]
+        host: String,
     },
     /// Run a latency benchmark against the model using native FFI
     Bench {

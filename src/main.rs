@@ -1,4 +1,5 @@
 mod cli;
+mod server;
 
 use anyhow::Result;
 use clap::Parser;
@@ -48,8 +49,17 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Serve { manifest: _ } => {
-            info!("Server mode not yet implemented.");
+        Commands::Serve { port, host } => {
+            info!("nanos starting daemon mode...");
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            rt.block_on(async {
+                if let Err(e) = server::start_server(host, *port).await {
+                    error!("Server failed to start: {:?}", e);
+                    std::process::exit(1);
+                }
+            });
         }
         Commands::Orchestrate { manifest } => {
             info!("nanos orchestrating fleet...");

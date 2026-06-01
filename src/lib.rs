@@ -114,7 +114,7 @@ pub fn nanos_spawn_with_config(manifest_path: &str, config: NanosConfig) -> Resu
     let manifest_clone = manifest;
 
     let handle = thread::spawn(move || -> Result<()> {
-        sandbox::execute_sandbox(manifest_clone, llm_engine, bus_clone)
+        sandbox::execute_sandbox(manifest_clone, llm_engine, bus_clone).map(|_| ())
     });
 
     Ok(NanosHandle {
@@ -158,7 +158,7 @@ pub fn nanos_spawn_fleet(manifest_path: &str) -> Result<Vec<NanosHandle>> {
         let traces = Arc::new(Mutex::new(Vec::new()));
 
         let thread_handle = thread::spawn(move || -> Result<()> {
-            sandbox::execute_sandbox(agent_manifest, Some(llm_clone), Some(bus_clone))
+            sandbox::execute_sandbox(agent_manifest, Some(llm_clone), Some(bus_clone)).map(|_| ())
         });
 
         handles.push(NanosHandle {

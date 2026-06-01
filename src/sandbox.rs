@@ -33,7 +33,7 @@ pub fn execute_sandbox(
     manifest: AgentManifest,
     llm: Option<std::sync::Arc<LlmEngine>>,
     bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
-) -> Result<()> {
+) -> Result<Vec<crate::trace::AgentTrace>> {
     let sandbox_boot_start = std::time::Instant::now();
     info!("Configuring Wasmtime Engine...");
     
@@ -120,14 +120,14 @@ pub fn execute_sandbox(
         let mcp_clients = store.data_mut().mcp_clients.drain(..).collect::<Vec<_>>();
         let bus = store.data().bus.clone();
         
-        run_js_agent(
+        let traces = run_js_agent(
             &js_code, 
             &manifest, 
             Some(llm_engine),
             mcp_clients,
             bus
         )?;
-        return Ok(());
+        return Ok(traces);
     }
     
     let module = Module::from_binary(&engine, &wasm_bytes)?;
@@ -162,7 +162,8 @@ pub fn execute_sandbox(
     // Print peak RSS for benchmarking
     print_peak_rss();
     
-    Ok(())
+    let traces = store.data().traces.clone();
+    Ok(traces)
 }
 
 /// Exposes Native tools to the WebAssembly module via FFI.
@@ -764,7 +765,7 @@ fn run_js_agent(
     llm: Option<std::sync::Arc<LlmEngine>>,
     mcp_clients: Vec<crate::mcp_client::McpClient>,
     bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
-) -> Result<()> {
+) -> Result<Vec<crate::trace::AgentTrace>> {
     let temp_js_path = "/tmp/nanos_agent_bundle.js";
     std::fs::write(temp_js_path, js_code)?;
     
@@ -946,7 +947,7 @@ fn run_js_agent(
     let _ = child.wait();
     
     crate::trace::print_trace_table(&traces);
-    Ok(())
+    Ok(traces)
 }
 
 fn record_js_trace(

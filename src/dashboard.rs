@@ -236,7 +236,7 @@ pub fn run_dashboard<P: AsRef<Path>>(manifest_path: P) -> Result<()> {
                     println!("\x1B[38;2;244;63;94mSpawning divergent execution branch...\x1B[0m");
                     let replay_engine = Arc::new(LlmEngine::new(&replay_manifest.model)?);
                     match crate::sandbox::execute_sandbox(replay_manifest, Some(replay_engine), None) {
-                        Ok(()) => {
+                        Ok(_) => {
                             println!("\x1B[38;2;52;211;153m✔ Replay execution completed. Divergent branch finished.\x1B[0m");
                         }
                         Err(e) => {

@@ -1,6 +1,7 @@
+use serde::{Serialize, Deserialize};
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTrace {
     pub step: u32,
     pub action: String,
