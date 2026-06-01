@@ -1,7 +1,6 @@
 <div align="center">
-  <img src="assets/nanos_logo.png" alt="nanos Logo" width="180">
-  <h1>nanos</h1>
-  <p><b>The kernel-level LLM and agent sandboxer.</b></p>
+  <img src="assets/nanos_architecture_overview.png" alt="nanos: Kernel-level LLM & Agent Sandbox" width="850">
+  <br><br>
 
   <p>
     <a href="https://github.com/PandiaJason/nanos/actions"><img src="https://github.com/PandiaJason/nanos/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
@@ -10,10 +9,6 @@
     <img src="https://img.shields.io/badge/GPU-Metal%20%2F%20CUDA-ff6b6b?style=for-the-badge" alt="GPU">
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=for-the-badge" alt="License"></a>
   </p>
-
-  <br>
-  <img src="assets/nanos_architecture_overview.png" alt="nanos Architecture Overview" width="850">
-  <br>
 
   <h3>50x RAM Reduction (~39MB RSS vs 2GB+ VM) · &lt; 3ms Sandbox Boot · Zero Docker · Zero Python</h3>
   <p><b>Just the agent, the weights, and the silicon. Serving WASM-sandboxed agents via CLI, HTTP API, TUI, or Web Debugger.</b></p>
