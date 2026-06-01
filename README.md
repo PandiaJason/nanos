@@ -185,6 +185,9 @@ To maintain transparency and allow full scientific reproducibility of the metric
 *   **RSS (Memory Footprint)**: Measured the host process Peak Resident Set Size (RSS) using `ps` on macOS, excluding loaded model weights (to measure runtime overhead independently).
 *   **Docker Baseline**: Tested using Docker Desktop for Mac with a default Linux VM allocation (2 CPUs, 2GB memory). The model was executed inside the VM using `ollama/ollama:latest` with CPU emulation.
 
+A fully automated benchmark reproduction run is available via [benchmarks/run_benchmark.sh](file:///Users/admin/Jas%20Apps/nanos/benchmarks/run_benchmark.sh). Running this script will automatically spin up the Docker container, pull the model, execute the host/Docker comparisons, print performance logs, and tear down the container safely.
+
+
 ---
 
 ## CLI Command Reference
@@ -284,7 +287,33 @@ Expose `nanos` as an HTTP daemon and launch the premium visual dashboard compani
 Open `http://localhost:8080` in your browser. Inspect running statuses, step latencies, peak memory consumption, and **click on any step to trigger a Time-Travel Divergent Replay**!
 ---
 
-## 🛠️ Manifest Reference (`.nano`)
+### 6. Included Examples
+
+To demonstrate nanos in action, the following pre-configured examples are provided in the `examples/` directory:
+
+*   **Host Capability Sandboxing**: Attempts unauthorized filesystem reads (e.g., `Cargo.toml`) and unauthorized external network calls to verify sandbox isolation boundaries.
+    ```bash
+    # Compile the TS agent to WASM
+    node nanos-sdk/bin/nanos-compile.js examples/security_violation.ts --out dist/security_violation.wasm --engine bundle
+    # Execute the agent and verify the host blocks the unauthorized FFI calls
+    ./target/release/nanos run examples/security_violation.nano
+    ```
+*   **TypeScript MCP Tool Calls**: Invokes external Model Context Protocol tools from TypeScript via the host's `mcp_call` FFI system call.
+    ```bash
+    # Compile the TS agent to WASM
+    node nanos-sdk/bin/nanos-compile.js examples/mcp_server_caller.ts --out dist/mcp_server_caller.wasm --engine bundle
+    # Run the agent against the ping-server MCP server
+    ./target/release/nanos run examples/mcp_server_caller.nano
+    ```
+*   **Multi-Agent Fleet Orchestration**: Runs two cooperative agents (`researcher` and `writer`) communicating over a shared memory message bus or TCP network.
+    ```bash
+    # Run locally via threads
+    ./target/release/nanos orchestrate examples/fleet_orchestrator.nano
+    ```
+
+---
+
+## Manifest Reference (`.nano`)
 
 Every agent is defined by a `.nano` YAML configuration file:
 
@@ -319,7 +348,7 @@ binary: "dist/test_agent.wasm" # Target agent compilation binary
 goal: "Extract the secret..." # Mission statement of the agent
 ```
 
-For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification Document](docs/ffi-spec.md).
+For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification Document](file:///Users/admin/Jas%20Apps/nanos/docs/ffi-spec.md) and the low-level [WASM Syscall ABI Document](file:///Users/admin/Jas%20Apps/nanos/docs/syscall-abi.md).
 
 ---
 
@@ -327,7 +356,7 @@ For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification
 
 Unlike WebAssembly projects like **LlamaEdge** or **WasmEdge** which package the LLM itself into WASM to expose it as an HTTP web server, `nanos` focuses entirely on sandboxing the **agent logic** while letting inference run natively on host silicon.
 
-| Dimension | **LlamaEdge / WasmEdge** 🌐 | **nanos** |
+| Dimension | **LlamaEdge / WasmEdge** | **nanos** |
 | :--- | :--- | :--- |
 | **Core Paradigm** | **"LLM-as-a-Service"** (Web Server Model) | **"Microkernel OS"** (In-Process Syscall Model) |
 | **Interface Boundary** | Localhost HTTP REST Sockets (JSON-RPC) | Memory Boundary (Direct FFI Pointer Passing) |
@@ -335,7 +364,7 @@ Unlike WebAssembly projects like **LlamaEdge** or **WasmEdge** which package the
 | **Tool Execution Latency**| **~348ms** (TCP stack, serialization, loopback routing) | **< 1ms** (Zero-copy memory pointer sharing) |
 | **Target Use Case** | Serving LLMs as isolated cloud web backends. | Executing local, secure, low-latency AI agents. |
 
-### 🛠️ The Architectural Difference
+### The Architectural Difference
 
 1. **The Web Server Model (LlamaEdge)**:
    ```

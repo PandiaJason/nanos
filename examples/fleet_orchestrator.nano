@@ -1,0 +1,21 @@
+name: "nanos-distributed-fleet"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:0.5b"
+  context_window: 4096
+resources:
+  memory: "512MB"
+  max_steps: 12
+permissions:
+  fs_read:
+    - "instruction.txt"
+  fs_write:
+    - "secret.txt"
+  network: true
+agents:
+  - name: "researcher"
+    goal: "Read the file instruction.txt, extract the secret key, and send it to agent 'writer' using agent_send. Then call done."
+    tools: ["fs_read", "agent_send", "done"]
+  - name: "writer"
+    goal: "Call agent_recv to receive the secret key from 'researcher'. Write that secret key to secret.txt, and call done."
+    tools: ["fs_write", "agent_recv", "done"]

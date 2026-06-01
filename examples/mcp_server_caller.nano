@@ -1,0 +1,21 @@
+name: "mcp-server-caller-agent"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:0.5b"
+  context_window: 4096
+resources:
+  memory: "512MB"
+  max_steps: 10
+permissions:
+  fs_read: []
+  fs_write: []
+  network: false
+mcp_servers:
+  - name: "ping-server"
+    command: "node"
+    args:
+      - "/Users/admin/Jas Apps/nanos/examples/mcp_ping_server.js"
+tools:
+  - "mcp_call"
+binary: "dist/mcp_server_caller.wasm"
+goal: "Invoke the external MCP 'ping' tool using the ping-server and verify the response."

@@ -1,0 +1,15 @@
+name: "security-violation-test"
+model:
+  provider: "ollama"
+  model_name: "qwen2.5-coder:0.5b"
+  context_window: 4096
+resources:
+  memory: "512MB"
+  max_steps: 5
+permissions:
+  fs_read:
+    - "instruction.txt"
+  fs_write: []
+  network: false
+binary: "dist/security_violation.wasm"
+goal: "Attempt unauthorized actions to test the sandbox security boundaries."

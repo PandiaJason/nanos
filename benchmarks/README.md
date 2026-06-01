@@ -39,7 +39,7 @@ This directory details the exact methodology, hardware configuration, and measur
 
 ---
 
-## 🛠️ Step-by-Step Reproduction
+## Step-by-Step Reproduction
 
 ### 1. Host LLM Preparation
 Ensure Ollama is running natively on your macOS host:

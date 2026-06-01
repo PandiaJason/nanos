@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-
-const fs = require('fs');
-const path = require('path');
-const { execSync, spawnSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import { execSync, spawnSync } from 'child_process';
 
 console.log("\x1B[38;2;34;211;238m⚡ nanos compile — JS/TS → WASM Toolchain v1.0.0\x1B[0m");
 

@@ -44,7 +44,12 @@ export const web = {
   get: (url) => sendSyscall("web_get", [url]),
 };
 
+export const mcp = {
+  call: (server, tool, args) => sendSyscall("mcp_call", [server, tool, args]),
+};
+
 export const fleet = {
   send: (target, msg) => sendSyscall("agent_send", [target, msg]),
   recv: () => sendSyscall("agent_recv", []),
 };
+
