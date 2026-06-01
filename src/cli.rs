@@ -33,9 +33,24 @@ pub enum Commands {
     /// Orchestrate a multi-agent fleet from a manifest
     Orchestrate {
         manifest: Option<PathBuf>,
+        /// Enable network orchestration mode (as TCP server)
+        #[arg(short, long)]
+        network: bool,
+        /// Port to bind orchestrator server to (default: 9090)
+        #[arg(short, long, default_value = "9090")]
+        port: u16,
     },
     /// View real-time agent execution status and Time-Travel debug console
     Dashboard {
         manifest: Option<PathBuf>,
+    },
+    /// Connect a remote agent node to a distributed orchestrator
+    Node {
+        /// Address to connect to, e.g. 127.0.0.1:9090
+        #[arg(short, long)]
+        connect: String,
+        /// Name of this agent node matching fleet manifest configuration
+        #[arg(short, long)]
+        name: String,
     },
 }

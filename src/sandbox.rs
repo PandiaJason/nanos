@@ -8,6 +8,12 @@ use std::io::{BufRead, BufReader, Write};
 use crate::manifest::AgentManifest;
 use crate::llm::LlmEngine;
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ReplayConfig {
+    pub target_step: u32,
+    pub override_observation: String,
+}
+
 /// State injected into the WASM Sandbox.
 pub struct AgentState {
     pub name: String,
@@ -17,6 +23,7 @@ pub struct AgentState {
     pub mcp_clients: Vec<crate::mcp_client::McpClient>,
     pub bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
     pub limiter: StoreLimits,
+    pub replay: Option<ReplayConfig>,
 }
 
 impl AgentState {
@@ -33,6 +40,15 @@ pub fn execute_sandbox(
     manifest: AgentManifest,
     llm: Option<std::sync::Arc<LlmEngine>>,
     bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
+) -> Result<Vec<crate::trace::AgentTrace>> {
+    execute_sandbox_with_replay(manifest, llm, bus, None)
+}
+
+pub fn execute_sandbox_with_replay(
+    manifest: AgentManifest,
+    llm: Option<std::sync::Arc<LlmEngine>>,
+    bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
+    replay: Option<ReplayConfig>,
 ) -> Result<Vec<crate::trace::AgentTrace>> {
     let sandbox_boot_start = std::time::Instant::now();
     info!("Configuring Wasmtime Engine...");
@@ -89,6 +105,7 @@ pub fn execute_sandbox(
         mcp_clients,
         bus,
         limiter,
+        replay: replay.clone(),
     });
     
     // Activate the resource limiter on this store
@@ -125,7 +142,8 @@ pub fn execute_sandbox(
             &manifest, 
             Some(llm_engine),
             mcp_clients,
-            bus
+            bus,
+            replay
         )?;
         return Ok(traces);
     }
@@ -178,30 +196,46 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         
         info!("[MCP Syscall] 'fs_read' invoked for path: {}", path);
         
-        let manifest = &caller.data().manifest;
-        let mut allowed = false;
-        if let Some(fs_read_rules) = &manifest.permissions.fs_read {
-            for rule in fs_read_rules {
-                if rule.ends_with("**") {
-                    let prefix = &rule[..rule.len()-2];
-                    if path.starts_with(prefix) { allowed = true; break; }
-                } else if rule.ends_with("*") {
-                    let prefix = &rule[..rule.len()-1];
-                    if path.starts_with(prefix) { allowed = true; break; }
-                } else if &path == rule {
-                    allowed = true;
-                    break;
-                }
+        // REPLAY OVERRIDE CHECK
+        let state_mut = caller.data_mut();
+        let current_step = (state_mut.traces.len() + 1) as u32;
+        let mut override_res = None;
+        if let Some(replay) = &state_mut.replay {
+            if current_step == replay.target_step {
+                info!("[Replay] Injecting fs_read override for Step {}: {}", current_step, replay.override_observation);
+                override_res = Some(replay.override_observation.clone());
             }
         }
-
-        let response = if !allowed {
-            info!("[Security] 'fs_read' blocked path: {}", path);
-            String::from("[Security] PERMISSION_DENIED")
+        
+        let response = if let Some(r) = override_res {
+            caller.data_mut().replay = None; // Clear override
+            r
         } else {
-            match std::fs::read_to_string(&path) {
-                Ok(contents) => contents,
-                Err(e) => format!("Error reading file: {}", e),
+            let manifest = &caller.data().manifest;
+            let mut allowed = false;
+            if let Some(fs_read_rules) = &manifest.permissions.fs_read {
+                for rule in fs_read_rules {
+                    if rule.ends_with("**") {
+                        let prefix = &rule[..rule.len()-2];
+                        if path.starts_with(prefix) { allowed = true; break; }
+                    } else if rule.ends_with("*") {
+                        let prefix = &rule[..rule.len()-1];
+                        if path.starts_with(prefix) { allowed = true; break; }
+                    } else if &path == rule {
+                        allowed = true;
+                        break;
+                    }
+                }
+            }
+
+            if !allowed {
+                info!("[Security] 'fs_read' blocked path: {}", path);
+                String::from("[Security] PERMISSION_DENIED")
+            } else {
+                match std::fs::read_to_string(&path) {
+                    Ok(contents) => contents,
+                    Err(e) => format!("Error reading file: {}", e),
+                }
             }
         };
         
@@ -462,23 +496,37 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         memory.read(&caller, prompt_ptr as usize, &mut prompt_bytes).unwrap();
         let prompt = String::from_utf8_lossy(&prompt_bytes).to_string();
         
-        let state = caller.data();
-        let res = if let Some(llm) = &state.llm {
-            llm.infer(&prompt)
+        // REPLAY OVERRIDE CHECK
+        let state_mut = caller.data_mut();
+        let current_step = (state_mut.traces.len() + 1) as u32;
+        let mut override_res = None;
+        if let Some(replay) = &state_mut.replay {
+            if current_step == replay.target_step {
+                info!("[Replay] Injecting LLM response override for Step {}: {}", current_step, replay.override_observation);
+                override_res = Some(replay.override_observation.clone());
+            }
+        }
+        
+        let (response, prompt_tokens, gen_tokens) = if let Some(r) = override_res {
+            caller.data_mut().replay = None; // Clear override
+            (r, 0, 0)
         } else {
-            Err(anyhow::anyhow!("LLM Engine not initialized"))
+            let state = caller.data();
+            let res = if let Some(llm) = &state.llm {
+                llm.infer(&prompt)
+            } else {
+                Err(anyhow::anyhow!("LLM Engine not initialized"))
+            };
+            match res {
+                Ok(resp) => {
+                    info!("LLM Raw Response: {}", resp.response);
+                    (resp.response, resp.prompt_tokens, resp.gen_tokens)
+                }
+                Err(e) => (format!("LLM Inference Error: {}", e), 0, 0),
+            }
         };
         
         let latency = start_time.elapsed();
-        
-        let (response, prompt_tokens, gen_tokens) = match res {
-            Ok(resp) => {
-                info!("LLM Raw Response: {}", resp.response);
-                (resp.response, resp.prompt_tokens, resp.gen_tokens)
-            }
-            Err(e) => (format!("LLM Inference Error: {}", e), 0, 0),
-        };
-        
         let resp_bytes = response.as_bytes();
         let len_to_copy = std::cmp::min(resp_bytes.len(), out_max as usize);
         
@@ -562,7 +610,15 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         
         info!("[Agent {}] sending msg to {}: {}", caller.data().name, target, msg);
         
-        let success = if let Some(bus) = &caller.data().bus {
+        let success = if crate::network::is_node_mode() {
+            match crate::network::call_network_bus("send", serde_json::json!({ "target": target, "msg": msg })) {
+                Ok(_) => 1,
+                Err(e) => {
+                    error!("Node agent_send FFI failed over network: {:?}", e);
+                    0
+                }
+            }
+        } else if let Some(bus) = &caller.data().bus {
             bus.send(&target, msg);
             1
         } else {
@@ -591,14 +647,32 @@ fn bind_mcp_syscalls(linker: &mut Linker<AgentState>) -> Result<()> {
         let name = caller.data().name.clone();
         
         let mut msg_opt = None;
-        for _ in 0..100 { // Check every 100ms for up to 10 seconds
-            if let Some(bus) = &caller.data().bus {
-                if let Some(m) = bus.recv(&name) {
-                    msg_opt = Some(m);
-                    break;
+        if crate::network::is_node_mode() {
+            for _ in 0..100 {
+                match crate::network::call_network_bus("recv", serde_json::json!({})) {
+                    Ok(val) => {
+                        if let Some(s) = val.as_str() {
+                            msg_opt = Some(s.to_string());
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Node agent_recv FFI failed over network: {:?}", e);
+                        break;
+                    }
                 }
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
-            std::thread::sleep(std::time::Duration::from_millis(100));
+        } else {
+            for _ in 0..100 { // Check every 100ms for up to 10 seconds
+                if let Some(bus) = &caller.data().bus {
+                    if let Some(m) = bus.recv(&name) {
+                        msg_opt = Some(m);
+                        break;
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
         }
         
         let response = msg_opt.unwrap_or_default();
@@ -765,7 +839,9 @@ fn run_js_agent(
     llm: Option<std::sync::Arc<LlmEngine>>,
     mcp_clients: Vec<crate::mcp_client::McpClient>,
     bus: Option<std::sync::Arc<crate::orchestrator::MessageBus>>,
+    replay: Option<ReplayConfig>,
 ) -> Result<Vec<crate::trace::AgentTrace>> {
+    let mut replay = replay;
     let temp_js_path = "/tmp/nanos_agent_bundle.js";
     std::fs::write(temp_js_path, js_code)?;
     
@@ -806,7 +882,25 @@ fn run_js_agent(
         
         let start_time = std::time::Instant::now();
         
-        let result = match method {
+        // REPLAY OVERRIDE CHECK FOR JS
+        let mut override_res = None;
+        if let Some(ref r) = replay {
+            if (step + 1) == r.target_step {
+                info!("[Replay] Injecting JS FFI override for Step {} (Method: {}): {}", step + 1, method, r.override_observation);
+                override_res = Some(r.override_observation.clone());
+            }
+        }
+        
+        let result = if let Some(r) = override_res {
+            replay = None; // Disable override
+            // Record trace for this action
+            let latency = start_time.elapsed();
+            step += 1;
+            let args = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
+            record_js_trace(&mut traces, step, method, args, "-", latency, &r, &manifest.name);
+            json!(r)
+        } else {
+            match method {
             "fs_read" => {
                 let path = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
                 let allowed = check_fs_read_permission(path, manifest);
@@ -891,7 +985,12 @@ fn run_js_agent(
             "agent_send" => {
                 let target = params.and_then(|p| p.get(0)).and_then(|v| v.as_str()).unwrap_or("");
                 let msg = params.and_then(|p| p.get(1)).and_then(|v| v.as_str()).unwrap_or("");
-                let res = if let Some(ref message_bus) = bus {
+                let res = if crate::network::is_node_mode() {
+                    match crate::network::call_network_bus("send", json!({ "target": target, "msg": msg })) {
+                        Ok(_) => "Message sent successfully.".to_string(),
+                        Err(e) => format!("Error: Remote send failed: {:?}", e),
+                    }
+                } else if let Some(ref message_bus) = bus {
                     message_bus.send(target, msg.to_string());
                     "Message sent successfully.".to_string()
                 } else {
@@ -903,7 +1002,22 @@ fn run_js_agent(
                 json!(res)
             }
             "agent_recv" => {
-                let res = if let Some(ref message_bus) = bus {
+                let res = if crate::network::is_node_mode() {
+                    let mut msg_opt = None;
+                    for _ in 0..100 {
+                        match crate::network::call_network_bus("recv", json!({})) {
+                            Ok(val) => {
+                                if let Some(s) = val.as_str() {
+                                    msg_opt = Some(s.to_string());
+                                    break;
+                                }
+                            }
+                            Err(_) => break,
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                    msg_opt.unwrap_or_else(|| "[No messages in queue]".to_string())
+                } else if let Some(ref message_bus) = bus {
                     let agent_name = manifest.name.clone().unwrap_or_default();
                     message_bus.recv(&agent_name).unwrap_or_else(|| "[No messages in queue]".to_string())
                 } else {
@@ -932,7 +1046,8 @@ fn run_js_agent(
                 json!(res)
             }
             _ => json!(format!("Error: Unknown method '{}'", method)),
-        };
+        }
+    };
         
         let response = json!({
             "jsonrpc": "2.0",

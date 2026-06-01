@@ -18,6 +18,7 @@ pub mod trace;
 pub mod mcp_client;
 pub mod orchestrator;
 pub mod dashboard;
+pub mod network;
 
 use anyhow::Result;
 use std::sync::{Arc, Mutex};

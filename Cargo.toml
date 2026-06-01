@@ -29,3 +29,6 @@ wasmtime = "45.0.0"
 axum = "0.7.5"
 tower-http = { version = "0.5.2", features = ["cors", "trace"] }
 
+[features]
+gpu-cuda = ["llama-cpp-2/cuda"]
+

@@ -88,10 +88,45 @@ async fn post_orchestrate(Json(payload): Json<OrchestrateRequest>) -> Result<Jso
     }
 }
 
+// Handler for visual debugger dashboard
+async fn get_dashboard() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("web/index.html"))
+}
+
+// Handler for divergent trace replay
+#[derive(Deserialize)]
+struct ReplayRequest {
+    manifest: AgentManifest,
+    history: Vec<nanos::trace::AgentTrace>,
+    override_observation: String,
+}
+
+async fn post_replay(Json(payload): Json<ReplayRequest>) -> Result<Json<RunResponse>, (StatusCode, String)> {
+    info!("HTTP: Spawn time-travel replay agent. Target Step: {}", payload.history.len() + 1);
+    let target_step = (payload.history.len() + 1) as u32;
+    let replay_config = nanos::sandbox::ReplayConfig {
+        target_step,
+        override_observation: payload.override_observation,
+    };
+    match nanos::sandbox::execute_sandbox_with_replay(payload.manifest, None, None, Some(replay_config)) {
+        Ok(traces) => Ok(Json(RunResponse {
+            status: "success".to_string(),
+            traces,
+        })),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Time-travel replay failed: {:?}", e),
+        )),
+    }
+}
+
 pub async fn start_server(host: &str, port: u16) -> Result<()> {
     let app = Router::new()
+        .route("/", get(get_dashboard))
+        .route("/dashboard", get(get_dashboard))
         .route("/v1/status", get(get_status))
         .route("/v1/run", post(post_run))
+        .route("/v1/replay", post(post_replay))
         .route("/v1/orchestrate", post(post_orchestrate));
 
     let addr_str = format!("{}:{}", host, port);

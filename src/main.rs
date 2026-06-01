@@ -61,8 +61,7 @@ fn main() -> Result<()> {
                 }
             });
         }
-        Commands::Orchestrate { manifest } => {
-            info!("nanos orchestrating fleet...");
+        Commands::Orchestrate { manifest, network, port } => {
             let resolved_path = match resolve_manifest(manifest, &["fleet.nano"]) {
                 Ok(path) => path,
                 Err(e) => {
@@ -70,9 +69,18 @@ fn main() -> Result<()> {
                     std::process::exit(1);
                 }
             };
-            if let Err(e) = nanos::orchestrator::orchestrate(&resolved_path) {
-                error!("Fleet orchestration failed: {:?}", e);
-                std::process::exit(1);
+            if *network {
+                info!("nanos orchestrating fleet over network on port {}...", port);
+                if let Err(e) = nanos::network::start_orchestrator_server(*port, &resolved_path) {
+                    error!("Fleet network orchestration failed: {:?}", e);
+                    std::process::exit(1);
+                }
+            } else {
+                info!("nanos orchestrating fleet...");
+                if let Err(e) = nanos::orchestrator::orchestrate(&resolved_path) {
+                    error!("Fleet orchestration failed: {:?}", e);
+                    std::process::exit(1);
+                }
             }
         }
         Commands::Dashboard { manifest } => {
@@ -85,6 +93,13 @@ fn main() -> Result<()> {
             };
             if let Err(e) = nanos::dashboard::run_dashboard(&resolved_path) {
                 error!("Dashboard failed: {:?}", e);
+                std::process::exit(1);
+            }
+        }
+        Commands::Node { connect, name } => {
+            info!("nanos node client starting for agent: {}...", name);
+            if let Err(e) = nanos::network::start_agent_node(connect, name) {
+                error!("Agent node connection failed: {:?}", e);
                 std::process::exit(1);
             }
         }

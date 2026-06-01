@@ -23,9 +23,9 @@
 
 | Status | Features | Technical Justification & Current State |
 | :--- | :--- | :--- |
-| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal GPU Offload (macOS)**<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** (`fs`, `llm`, `web`) <br>• **JS/TS SDK Compiler**<br>• **Multi-Agent Fleet Orchestration**<br>• **MCP stdio JSON-RPC Client Proxy**<br>• **HTTP API Daemon (`nanos serve`)** | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU mapping compile and run cleanly today. System calls (`fs_read`, `fs_write`, `eval_js`, `llm_infer`, `web_get`) run entirely in-memory with zero network overhead. JS/TS compilation via `nanos-compile.js` and Node sandbox dynamic permission routing is fully functional. Multi-agent thread orchestration communicating over the host message bus via FFI (`agent_send` / `agent_recv`) is fully tested and working. Spawning and executing MCP server stdio tools over JSON-RPC 2.0 is fully implemented and tested. The HTTP API Daemon (`nanos serve`) exposes status, run, and orchestrate endpoints cleanly. |
-| **🔧 In Progress** | • **Distributed Fleet Nodes**<br>• **Full MCP Capability Compliance** | Extending thread-based multi-agent execution to distributed network nodes (e.g. over TCP/gRPC). Adding full protocol capabilities to the MCP Proxy client (such as standard prompts, dynamic resources discovery, and validation hooks). |
-| **📋 Planned Roadmap** | • **NPM Registry Package (`nanos-sdk`)**<br>• **Time-Travel Debugger GUI**<br>• **Linux CUDA Backend** | Publishing `nanos-sdk` to NPM for easier global installation. The interactive time-travel debugger works in CLI mode inside the dashboard; a visual web GUI debugger is planned. Native CUDA GPU mapping for Linux is on the roadmap. |
+| **✅ Working Today** | • **Single-Agent WASM Sandbox**<br>• **Metal & CUDA GPU Offload** (macOS/Linux)<br>• **Local GGUF & Ollama**<br>• **In-Memory FFI Syscalls** (`fs`, `llm`, `web`) <br>• **JS/TS SDK Compiler**<br>• **Multi-Agent Fleet Orchestration** (Threads & Networks)<br>• **Distributed Fleet Nodes (TCP Network Message Bus)**<br>• **Full MCP Client Proxy Protocol Compliance**<br>• **HTTP API Daemon (`nanos serve`)**<br>• **Time-Travel Visual Web Debugger Dashboard**<br>• **NPM Package Registry Build** (`nanos-sdk`) | Wasmtime fuel limits, memory caps, and direct macOS Metal GPU / Linux CUDA mapping compile and run cleanly. System calls run entirely in-memory or proxy to remote nodes over TCP sockets. JS/TS compilation via `nanos-compile.js` and Node sandbox dynamic permission routing is fully functional. Distributed fleet orchestration communicating over TCP with line-delimited JSON-RPC packets is fully tested and working. Spawning and executing MCP server stdio tools with tools, prompts, resources, and schema validation hooks is fully compliant. The HTTP API Daemon (`nanos serve`) serves a beautiful visual web GUI debugger companion on `GET /` and dynamic time-travel replaying on `POST /v1/replay`. |
+| **🔧 In Progress** | • **Python / Go SDK Bindings**<br>• **Performance Optimizations** | Providing high-level SDK libraries for Python and Go developers to build and compile sandboxed agents. Tuning zero-copy memory FFI throughput. |
+| **📋 Planned Roadmap** | • **Wasmer / WasmEdge Integration**<br>• **Dynamic Resource Hot-plugging** | Support for alternative WebAssembly execution engines and pluggable tool-calling servers. |
 
 ---
 
@@ -157,23 +157,17 @@ Every agent runs inside a strict `wasmtime` store:
 - **Memory caps:** `StoreLimits` enforce max WASM heap allocation from the manifest.
 - **Permission-gated syscalls:** `fs_read` and `fs_write` require explicit directory paths in your manifest. Everything else is **deny-by-default**.
 
-### 🎮 Apple Metal GPU Offload (Working)
-Model weights are memory-mapped directly onto macOS graphics hardware via `llama.cpp`'s native Metal GPU layers.
+### 🎮 Metal & CUDA GPU Offload (Working)
+Model weights are memory-mapped directly onto macOS Metal or Linux CUDA graphics hardware via native `llama.cpp` layers. Enable compile flag with `--features gpu-cuda`.
 
-### 🤖 Multi-Agent Fleet Orchestration (In Progress)
-Orchestrate multiple agents concurrently sharing a single local `LlmEngine` instance. Agents communicate via thread-safe message queues.
-* **Current state:** Implemented locally using OS threads and a mutex-guarded `MessageBus` queue (`src/orchestrator.rs`).
-* **In progress:** Scaling this model to distributed nodes (e.g. over TCP/gRPC).
+### 🤖 Multi-Agent Fleet Orchestration (Working)
+Orchestrate multiple agents concurrently sharing a single `LlmEngine` instance. Agents communicate via thread-safe message queues locally or route through distributed nodes over a raw TCP network message bus.
 
-### 🕰️ Time-Travel Debugger (Prototype CLI)
-Inspect any step's exact execution trace and replay the agent from that step with a modified environment or mock tool observations.
-* **Current state:** Accessible via an interactive text-based CLI terminal when running in `nanos dashboard` mode.
-* **In progress:** A web-based visual debugger interface.
+### 🕰️ Time-Travel Visual Web Debugger Dashboard (Working)
+Inspect any step's exact execution trace, RSS memory, token consumption, and FFI latency. Submit manifestations, click on any step to edit prompt/observation variables, and trigger a divergent execution path instantly from the GUI companion served on `GET /` during `nanos serve`.
 
-### 🔌 Universal MCP Tool Proxy (In Progress)
-Bridge standard Model Context Protocol (MCP) servers straight to WASM.
-* **Current state:** Standard stdio JSON-RPC 2.0 communication is working (`src/mcp_client.rs`), spawning and managing server subprocesses.
-* **In progress:** Complete implementation of full protocol capabilities (prompts, resources, validation).
+### 🔌 Universal MCP Tool Proxy (Working)
+Bridge standard Model Context Protocol (MCP) servers straight to WASM. Supports full protocol specifications including listing tools, resource discovery, loading prompts, and parsing JSON parameter validation schemas.
 
 ### 🛡️ Sandboxed `eval_js` Syscall (Working)
 WASM agents can execute dynamic JavaScript code safely via a dedicated host syscall.
@@ -324,8 +318,9 @@ nanos <COMMAND> [OPTIONS]
 | Command | Description | Example Usage |
 | :--- | :--- | :--- |
 | **`run`** | Run a single AI agent from a `.nano` manifest | `nanos run examples/agent.nano` |
-| **`serve`** | Serve the agent runtime background daemon over HTTP | `nanos serve --port 8080` |
-| **`orchestrate`** | Orchestrate cooperative multi-agent fleets from a fleet manifest | `nanos orchestrate examples/fleet.nano` |
+| **`serve`** | Serve the agent runtime background daemon and Visual Web Debugger over HTTP | `nanos serve --port 8080` |
+| **`orchestrate`** | Orchestrate cooperative multi-agent fleets locally or as a TCP server | `nanos orchestrate examples/fleet.nano --network --port 9090` |
+| **`node`** | Connect a remote fleet node client back to the distributed server orchestrator | `nanos node --connect 127.0.0.1:9090 --name writer` |
 | **`dashboard`** | Launch the real-time TUI dashboard and Time-Travel debug console | `nanos dashboard examples/fleet.nano` |
 | **`bench`** | Run a native FFI latency benchmark against the LLM model | `nanos bench examples/agent.nano` |
 

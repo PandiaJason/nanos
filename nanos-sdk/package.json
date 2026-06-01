@@ -2,10 +2,16 @@
   "name": "nanos-sdk",
   "version": "1.0.0",
   "description": "SDK and toolchain to compile TypeScript/JavaScript AI Agents into optimized, secure WASM binaries for nanos OS",
+  "type": "module",
   "main": "index.js",
   "bin": {
     "nanos-compile": "./bin/nanos-compile.js"
   },
+  "files": [
+    "index.js",
+    "bin/nanos-compile.js",
+    "README.md"
+  ],
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 0"
   },
