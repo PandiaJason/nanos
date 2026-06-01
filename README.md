@@ -25,6 +25,18 @@ Rather than deploying agents as bloated virtual machines that talk to tools over
 
 ---
 
+## ⚡ Core Capabilities & Shipped Upgrades
+
+The following features have been fully implemented, verified, and shipped:
+
+1. **🕰️ Time-Travel Visual Web Debugger**: A premium, Axum-served visual web GUI served on `GET /` during `nanos serve`. Supports step-by-step trace inspection, RSS memory/latency logging, and a point-and-click **Divergent Replay** engine that intercepts FFI tool calls to test alternative agent trajectories.
+2. **🔌 Full MCP Protocol Compliance**: A robust Model Context Protocol client proxy supporting `tools/list`, `resources/list`, and `prompts/list` capabilities, with dynamic parameter validation against JSON schemas.
+3. **🌐 Distributed Fleet Nodes**: Multi-agent fleet execution distributed across networks over a raw TCP message bus. Launch the central orchestrator server via `nanos orchestrate --network`, and connect remote agent clients running on any network host via `nanos node --connect`.
+4. **📦 Ready-to-Publish JS/TS SDK** (`nanos-sdk`): Configured as a fully packaged ES Module with bundled dependencies, TypeScript declaration types, and automated tarball integrity validation.
+5. **🔥 Linux CUDA GPU Acceleration**: Compile feature mapping (`cargo build --features gpu-cuda`) enabling native CUDA offload of GGUF weights on Linux compute instances.
+
+---
+
 ## 🚨 The Problem with Current Agent Stacks
 
 Every AI agent framework today suffers from massive latency, memory bloat, and security vulnerabilities. A typical stack looks like this:
