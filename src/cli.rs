@@ -27,9 +27,7 @@ pub enum Commands {
         host: String,
     },
     /// Run a latency benchmark against the model using native FFI
-    Bench {
-        manifest: Option<PathBuf>,
-    },
+    Bench { manifest: Option<PathBuf> },
     /// Orchestrate a multi-agent fleet from a manifest
     Orchestrate {
         manifest: Option<PathBuf>,
@@ -39,6 +37,9 @@ pub enum Commands {
         /// Port to bind orchestrator server to (default: 9090)
         #[arg(short, long, default_value = "9090")]
         port: u16,
+        /// Secret token for distributed fleet authentication
+        #[arg(short, long)]
+        token: Option<String>,
     },
     /// Connect a remote agent node to a distributed orchestrator
     Node {
@@ -48,5 +49,8 @@ pub enum Commands {
         /// Name of this agent node matching fleet manifest configuration
         #[arg(short, long)]
         name: String,
+        /// Secret token for distributed fleet authentication
+        #[arg(short, long)]
+        token: Option<String>,
     },
 }

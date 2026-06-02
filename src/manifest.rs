@@ -21,6 +21,7 @@ pub struct AgentManifest {
     pub mcp_servers: Option<Vec<McpServerConfig>>,
     pub agents: Option<Vec<AgentSpec>>,
     pub binary: Option<String>,
+    pub token: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -60,9 +61,8 @@ impl AgentManifest {
         let path_ref = path.as_ref();
         let yaml_content = fs::read_to_string(path_ref)
             .with_context(|| format!("Failed to read manifest file at {:?}", path_ref))?;
-        
-        serde_yaml::from_str(&yaml_content)
-            .context("Failed to parse agent manifest YAML syntax")
+
+        serde_yaml::from_str(&yaml_content).context("Failed to parse agent manifest YAML syntax")
     }
 }
 
@@ -141,34 +141,52 @@ agents:
 
     #[test]
     fn memory_bytes_gb() {
-        let rl = ResourceLimits { memory: "2GB".to_string(), max_steps: 1 };
+        let rl = ResourceLimits {
+            memory: "2GB".to_string(),
+            max_steps: 1,
+        };
         assert_eq!(rl.memory_bytes(), 2 * 1024 * 1024 * 1024);
     }
 
     #[test]
     fn memory_bytes_mb() {
-        let rl = ResourceLimits { memory: "256MB".to_string(), max_steps: 1 };
+        let rl = ResourceLimits {
+            memory: "256MB".to_string(),
+            max_steps: 1,
+        };
         assert_eq!(rl.memory_bytes(), 256 * 1024 * 1024);
     }
 
     #[test]
     fn memory_bytes_kb() {
-        let rl = ResourceLimits { memory: "512KB".to_string(), max_steps: 1 };
+        let rl = ResourceLimits {
+            memory: "512KB".to_string(),
+            max_steps: 1,
+        };
         assert_eq!(rl.memory_bytes(), 512 * 1024);
     }
 
     #[test]
     fn memory_bytes_default_treated_as_mb() {
-        let rl = ResourceLimits { memory: "128".to_string(), max_steps: 1 };
+        let rl = ResourceLimits {
+            memory: "128".to_string(),
+            max_steps: 1,
+        };
         assert_eq!(rl.memory_bytes(), 128 * 1024 * 1024);
     }
 
     #[test]
     fn fuel_budget_calculation() {
-        let rl = ResourceLimits { memory: "256MB".to_string(), max_steps: 10 };
+        let rl = ResourceLimits {
+            memory: "256MB".to_string(),
+            max_steps: 10,
+        };
         assert_eq!(rl.fuel_budget(), 1_000_000);
 
-        let rl2 = ResourceLimits { memory: "256MB".to_string(), max_steps: 0 };
+        let rl2 = ResourceLimits {
+            memory: "256MB".to_string(),
+            max_steps: 0,
+        };
         assert_eq!(rl2.fuel_budget(), 0);
     }
 

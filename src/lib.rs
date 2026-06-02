@@ -11,14 +11,14 @@
 //! println!("Traces: {:?}", handle.traces());
 //! ```
 
-pub mod manifest;
-pub mod sandbox;
-pub mod llm;
-pub mod trace;
-pub mod mcp_client;
-pub mod orchestrator;
 pub mod dashboard;
+pub mod llm;
+pub mod manifest;
+pub mod mcp_client;
 pub mod network;
+pub mod orchestrator;
+pub mod sandbox;
+pub mod trace;
 
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
@@ -55,7 +55,8 @@ impl NanosHandle {
     /// Block until the agent finishes execution.
     pub fn wait(&mut self) -> Result<()> {
         if let Some(h) = self.handle.take() {
-            h.join().map_err(|_| anyhow::anyhow!("Agent thread panicked"))??;
+            h.join()
+                .map_err(|_| anyhow::anyhow!("Agent thread panicked"))??;
         }
         Ok(())
     }
@@ -67,7 +68,8 @@ impl NanosHandle {
 
     /// Kill the running agent.
     pub fn kill(&self) {
-        self.killed.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.killed
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Get a snapshot of all recorded execution traces.
@@ -81,7 +83,10 @@ impl NanosHandle {
             bus.send(&self.name, msg.to_string());
             Ok(())
         } else {
-            Err(anyhow::anyhow!("No message bus configured for agent '{}'", self.name))
+            Err(anyhow::anyhow!(
+                "No message bus configured for agent '{}'",
+                self.name
+            ))
         }
     }
 
@@ -105,7 +110,10 @@ pub fn nanos_spawn(manifest_path: &str) -> Result<NanosHandle> {
 /// Spawn a single sandboxed agent with custom configuration.
 pub fn nanos_spawn_with_config(manifest_path: &str, config: NanosConfig) -> Result<NanosHandle> {
     let manifest = manifest::AgentManifest::load_from_file(manifest_path)?;
-    let name = manifest.name.clone().unwrap_or_else(|| "nanos-agent".to_string());
+    let name = manifest
+        .name
+        .clone()
+        .unwrap_or_else(|| "nanos-agent".to_string());
     let killed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let traces = Arc::new(Mutex::new(Vec::new()));
     let bus = config.shared_bus.clone();
@@ -138,7 +146,9 @@ pub fn nanos_spawn_with_config(manifest_path: &str, config: NanosConfig) -> Resu
 /// ```
 pub fn nanos_spawn_fleet(manifest_path: &str) -> Result<Vec<NanosHandle>> {
     let manifest = manifest::AgentManifest::load_from_file(manifest_path)?;
-    let agents_list = manifest.agents.as_ref()
+    let agents_list = manifest
+        .agents
+        .as_ref()
         .ok_or_else(|| anyhow::anyhow!("No agents list in fleet manifest"))?;
 
     let llm_engine = Arc::new(llm::LlmEngine::new(&manifest.model)?);
@@ -173,4 +183,3 @@ pub fn nanos_spawn_fleet(manifest_path: &str) -> Result<Vec<NanosHandle>> {
 
     Ok(handles)
 }
-

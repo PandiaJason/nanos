@@ -3,7 +3,7 @@ mod server;
 
 use anyhow::Result;
 use clap::Parser;
-use tracing::{info, error, Level};
+use tracing::{Level, error, info};
 use tracing_subscriber::FmtSubscriber;
 
 use cli::{Cli, Commands};
@@ -14,30 +14,34 @@ fn main() -> Result<()> {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("Setting default subscriber failed");
+    tracing::subscriber::set_global_default(subscriber).expect("Setting default subscriber failed");
 
     let cli = Cli::parse();
 
     match &cli.command {
         Commands::Run { manifest } => {
             info!("nanos spawning process...");
-            
-            let resolved_path = match resolve_manifest(manifest, &["agent.nano", "test_e2e.nano", "mcp_test.nano"]) {
-                Ok(path) => path,
-                Err(e) => {
-                    error!("{}", e);
-                    std::process::exit(1);
-                }
-            };
+
+            let resolved_path =
+                match resolve_manifest(manifest, &["agent.nano", "test_e2e.nano", "mcp_test.nano"])
+                {
+                    Ok(path) => path,
+                    Err(e) => {
+                        error!("{}", e);
+                        std::process::exit(1);
+                    }
+                };
 
             match AgentManifest::load_from_file(&resolved_path) {
                 Ok(agent_manifest) => {
                     let name = agent_manifest.name.as_deref().unwrap_or("nanos-agent");
-                    let goal = agent_manifest.goal.as_deref().unwrap_or("No goal specified");
+                    let goal = agent_manifest
+                        .goal
+                        .as_deref()
+                        .unwrap_or("No goal specified");
                     info!("Loaded Agent: {}", name);
                     info!("Goal: {}", goal);
-                    
+
                     if let Err(e) = nanos::sandbox::execute_sandbox(agent_manifest, None, None) {
                         error!("Sandbox execution failed: {:?}", e);
                         std::process::exit(1);
@@ -61,7 +65,12 @@ fn main() -> Result<()> {
                 }
             });
         }
-        Commands::Orchestrate { manifest, network, port } => {
+        Commands::Orchestrate {
+            manifest,
+            network,
+            port,
+            token,
+        } => {
             let resolved_path = match resolve_manifest(manifest, &["fleet.nano"]) {
                 Ok(path) => path,
                 Err(e) => {
@@ -70,8 +79,19 @@ fn main() -> Result<()> {
                 }
             };
             if *network {
+                let manifest_token = match AgentManifest::load_from_file(&resolved_path) {
+                    Ok(m) => m.token,
+                    Err(_) => None,
+                };
+                let token_str = token
+                    .clone()
+                    .or(manifest_token)
+                    .or_else(|| std::env::var("NANOS_FLEET_TOKEN").ok());
+
                 info!("nanos orchestrating fleet over network on port {}...", port);
-                if let Err(e) = nanos::network::start_orchestrator_server(*port, &resolved_path) {
+                if let Err(e) =
+                    nanos::network::start_orchestrator_server(*port, &resolved_path, token_str)
+                {
                     error!("Fleet network orchestration failed: {:?}", e);
                     std::process::exit(1);
                 }
@@ -83,9 +103,17 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Node { connect, name } => {
+        Commands::Node {
+            connect,
+            name,
+            token,
+        } => {
+            let token_str = token
+                .clone()
+                .or_else(|| std::env::var("NANOS_FLEET_TOKEN").ok());
+
             info!("nanos node client starting for agent: {}...", name);
-            if let Err(e) = nanos::network::start_agent_node(connect, name) {
+            if let Err(e) = nanos::network::start_agent_node(connect, name, token_str) {
                 error!("Agent node connection failed: {:?}", e);
                 std::process::exit(1);
             }
@@ -101,8 +129,11 @@ fn main() -> Result<()> {
             };
             match AgentManifest::load_from_file(&resolved_path) {
                 Ok(agent_manifest) => {
-                    info!("Loaded Agent Model for Benchmark: {:?}", agent_manifest.model.path);
-                    
+                    info!(
+                        "Loaded Agent Model for Benchmark: {:?}",
+                        agent_manifest.model.path
+                    );
+
                     let system = "You are an AI agent. When you want to execute a tool, you MUST output a raw JSON object and nothing else.
 Allowed tools:
 - fs_read: reads a file. Args: absolute path.
@@ -113,10 +144,13 @@ Example output:
 {\"action\": \"fs_read\", \"args\": \"/workspace/report.txt\"}
 ";
                     let prompt = "Read the file /etc/passwd and summarize it. If it fails, output done with 'Failed'.";
-                    let full_prompt = format!("<|system|>\n{}\n<|user|>\n{}\n<|assistant|>\n", system, prompt);
+                    let full_prompt = format!(
+                        "<|system|>\n{}\n<|user|>\n{}\n<|assistant|>\n",
+                        system, prompt
+                    );
 
                     let engine = nanos::llm::LlmEngine::new(&agent_manifest.model).unwrap();
-                    
+
                     info!("Running warmup inference...");
                     let _ = engine.infer(&full_prompt).unwrap();
 
@@ -124,7 +158,7 @@ Example output:
                     let start = std::time::Instant::now();
                     let response = engine.infer(&full_prompt).unwrap();
                     let elapsed = start.elapsed();
-                    
+
                     println!("✅ FFI Inference completed in: {:.2?}", elapsed);
                     println!("Output length: {} bytes", response.response.len());
                 }
@@ -149,7 +183,7 @@ fn resolve_manifest(
         }
         return Err(anyhow::anyhow!("Manifest file not found at: {:?}", path));
     }
-    
+
     // Auto-discover in current directory and common locations
     for name in default_names {
         let paths = [
@@ -163,7 +197,7 @@ fn resolve_manifest(
             }
         }
     }
-    
+
     Err(anyhow::anyhow!(
         "No manifest file specified, and could not auto-discover any default manifests (e.g. '{}') in the current directory.\n\n\
         To resolve this, please do one of the following:\n\

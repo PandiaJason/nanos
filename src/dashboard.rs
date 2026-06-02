@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
 use crate::trace::AgentTrace;
+use std::sync::{Arc, Mutex};
 use tracing::info;
 
 pub struct DashboardState {
@@ -62,7 +62,10 @@ pub fn add_trace(trace: AgentTrace) {
 }
 
 pub fn update_agent(name: &str, status: &str, step: u32, memory_kb: usize) {
-    info!("[Agent: {}] Status: {}, Step: {}, Memory: {} KB", name, status, step, memory_kb);
+    info!(
+        "[Agent: {}] Status: {}, Step: {}, Memory: {} KB",
+        name, status, step, memory_kb
+    );
     if let Ok(mut s) = state().lock() {
         if let Some(agent) = s.agents.iter_mut().find(|a| a.name == name) {
             agent.status = status.to_string();

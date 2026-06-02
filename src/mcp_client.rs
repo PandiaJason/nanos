@@ -1,7 +1,7 @@
-use std::process::{Command, Stdio, Child, ChildStdin, ChildStdout};
+use anyhow::{Context, Result};
+use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
-use serde_json::{json, Value};
-use anyhow::{Result, Context};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use tracing::info;
 
 pub struct McpClient {
@@ -22,10 +22,16 @@ impl McpClient {
             .stderr(Stdio::inherit()) // Let stderr print to host console for debugging
             .spawn()
             .with_context(|| format!("Failed to spawn MCP server '{}'", name))?;
-            
-        let stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("Failed to open stdin for MCP server"))?;
-        let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("Failed to open stdout for MCP server"))?;
-        
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to open stdin for MCP server"))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Failed to open stdout for MCP server"))?;
+
         Ok(Self {
             name: name.to_string(),
             child,
@@ -34,40 +40,46 @@ impl McpClient {
             request_id: 1,
         })
     }
-    
+
     pub fn send_request(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = self.request_id;
         self.request_id += 1;
-        
+
         let request = json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
             "id": id
         });
-        
+
         let request_str = serde_json::to_string(&request)?;
         info!("MCP Request to '{}': {}", self.name, request_str);
-        
+
         writeln!(self.stdin, "{}", request_str)?;
         self.stdin.flush()?;
-        
+
         let mut response_line = String::new();
-        self.stdout.read_line(&mut response_line)
+        self.stdout
+            .read_line(&mut response_line)
             .with_context(|| format!("Failed to read response from MCP server '{}'", self.name))?;
-            
-        info!("MCP Response from '{}': {}", self.name, response_line.trim());
-        
+
+        info!(
+            "MCP Response from '{}': {}",
+            self.name,
+            response_line.trim()
+        );
+
         let response_val: Value = serde_json::from_str(&response_line)?;
-        
+
         if let Some(error) = response_val.get("error") {
             return Err(anyhow::anyhow!("MCP server returned error: {:?}", error));
         }
-        
-        let result = response_val.get("result")
+
+        let result = response_val
+            .get("result")
             .ok_or_else(|| anyhow::anyhow!("Missing result in MCP response"))?
             .clone();
-            
+
         Ok(result)
     }
 
@@ -77,19 +89,20 @@ impl McpClient {
             "arguments": arguments
         });
         let result = self.send_request("tools/call", params)?;
-        
-        let content_text = if let Some(content_array) = result.get("content").and_then(|c| c.as_array()) {
-            let mut texts = Vec::new();
-            for item in content_array {
-                if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
-                    texts.push(text.to_string());
+
+        let content_text =
+            if let Some(content_array) = result.get("content").and_then(|c| c.as_array()) {
+                let mut texts = Vec::new();
+                for item in content_array {
+                    if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
+                        texts.push(text.to_string());
+                    }
                 }
-            }
-            texts.join("\n")
-        } else {
-            result.to_string()
-        };
-        
+                texts.join("\n")
+            } else {
+                result.to_string()
+            };
+
         Ok(content_text)
     }
 
@@ -132,7 +145,7 @@ mod tests {
                 }));
             });
         "#;
-        
+
         let args = vec!["-e".to_string(), script.to_string()];
         let mut client = McpClient::spawn("echo-server", command, &args).unwrap();
 

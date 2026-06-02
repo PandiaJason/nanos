@@ -1,13 +1,13 @@
+use anyhow::Result;
 use axum::{
-    routing::{get, post},
     Json, Router,
     http::StatusCode,
+    routing::{get, post},
 };
+use nanos::manifest::AgentManifest;
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use tracing::info;
-use anyhow::Result;
-use nanos::manifest::AgentManifest;
 
 #[derive(Serialize)]
 struct StatusResponse {
@@ -49,7 +49,9 @@ async fn get_status() -> Json<StatusResponse> {
 }
 
 // Handler for running agent from payload
-async fn post_run(Json(payload): Json<AgentManifest>) -> Result<Json<RunResponse>, (StatusCode, String)> {
+async fn post_run(
+    Json(payload): Json<AgentManifest>,
+) -> Result<Json<RunResponse>, (StatusCode, String)> {
     info!("HTTP: Spawn sandboxed agent: {:?}", payload.name);
     match nanos::sandbox::execute_sandbox(payload, None, None) {
         Ok(traces) => Ok(Json(RunResponse {
@@ -69,8 +71,13 @@ struct OrchestrateRequest {
     manifest_path: String,
 }
 
-async fn post_orchestrate(Json(payload): Json<OrchestrateRequest>) -> Result<Json<OrchestrateResponse>, (StatusCode, String)> {
-    info!("HTTP: Spawning fleet orchestration from: {}", payload.manifest_path);
+async fn post_orchestrate(
+    Json(payload): Json<OrchestrateRequest>,
+) -> Result<Json<OrchestrateResponse>, (StatusCode, String)> {
+    info!(
+        "HTTP: Spawning fleet orchestration from: {}",
+        payload.manifest_path
+    );
     if !std::path::Path::new(&payload.manifest_path).exists() {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -101,14 +108,24 @@ struct ReplayRequest {
     override_observation: String,
 }
 
-async fn post_replay(Json(payload): Json<ReplayRequest>) -> Result<Json<RunResponse>, (StatusCode, String)> {
-    info!("HTTP: Spawn time-travel replay agent. Target Step: {}", payload.history.len() + 1);
+async fn post_replay(
+    Json(payload): Json<ReplayRequest>,
+) -> Result<Json<RunResponse>, (StatusCode, String)> {
+    info!(
+        "HTTP: Spawn time-travel replay agent. Target Step: {}",
+        payload.history.len() + 1
+    );
     let target_step = (payload.history.len() + 1) as u32;
     let replay_config = nanos::sandbox::ReplayConfig {
         target_step,
         override_observation: payload.override_observation,
     };
-    match nanos::sandbox::execute_sandbox_with_replay(payload.manifest, None, None, Some(replay_config)) {
+    match nanos::sandbox::execute_sandbox_with_replay(
+        payload.manifest,
+        None,
+        None,
+        Some(replay_config),
+    ) {
         Ok(traces) => Ok(Json(RunResponse {
             status: "success".to_string(),
             traces,
@@ -131,11 +148,11 @@ pub async fn start_server(host: &str, port: u16) -> Result<()> {
 
     let addr_str = format!("{}:{}", host, port);
     let addr: SocketAddr = addr_str.parse()?;
-    
+
     info!("📊 nanos server listening on http://{}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
-    
+
     Ok(())
 }
