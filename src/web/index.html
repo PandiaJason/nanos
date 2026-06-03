@@ -9,20 +9,20 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #090e17;
-      --surface: #111827;
-      --surface-card: #1f2937;
-      --surface-hover: #374151;
-      --accent: #22d3ee;
-      --accent-dim: rgba(34, 211, 238, 0.15);
-      --success: #10b981;
-      --success-dim: rgba(16, 185, 129, 0.15);
-      --error: #ef4444;
-      --error-dim: rgba(239, 68, 68, 0.15);
-      --text: #f3f4f6;
-      --text-muted: #9ca3af;
-      --border: #374151;
-      --glow: 0 0 15px rgba(34, 211, 238, 0.3);
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --surface-card: #f1f5f9;
+      --surface-hover: #e2e8f0;
+      --accent: #2563eb;
+      --accent-dim: rgba(37, 99, 235, 0.08);
+      --success: #059669;
+      --success-dim: rgba(5, 150, 105, 0.08);
+      --error: #dc2626;
+      --error-dim: rgba(220, 38, 38, 0.08);
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --glow: 0 4px 6px -1px rgba(37, 99, 235, 0.05), 0 2px 4px -1px rgba(37, 99, 235, 0.03);
     }
 
     * {
@@ -82,7 +82,7 @@
       align-items: center;
       gap: 0.5rem;
       font-size: 0.875rem;
-      background: rgba(31, 41, 55, 0.5);
+      background: var(--surface-card);
       padding: 0.5rem 1rem;
       border-radius: 0.5rem;
       border: 1px solid var(--border);
@@ -130,7 +130,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      background: rgba(17, 24, 39, 0.8);
+      background: var(--surface);
     }
 
     .pane-title {
@@ -190,7 +190,7 @@
 
     .btn {
       background: var(--accent);
-      color: var(--bg);
+      color: #ffffff;
       font-weight: 600;
       border: none;
       padding: 0.75rem 1.5rem;
@@ -266,7 +266,7 @@
 
     .step-card.active {
       border-color: var(--accent);
-      background: rgba(34, 211, 238, 0.05);
+      background: var(--accent-dim);
     }
 
     .step-num {
@@ -402,7 +402,7 @@
     .loader {
       width: 20px;
       height: 20px;
-      border: 3px solid rgba(255, 255, 255, 0.3);
+      border: 3px solid rgba(0, 0, 0, 0.1);
       border-radius: 50%;
       border-top-color: var(--accent);
       animation: spin 1s ease-in-out infinite;
