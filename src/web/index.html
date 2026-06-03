@@ -585,21 +585,14 @@
       }
       
       try {
-        // Fetch original manifest from local files via dummy path (we can read common path examples)
-        // Since we serve /v1/status we can fetch local manifests using api fetch if we have endpoints,
-        // but since we don't have file read endpoints, we can populate default mock models for UI tests.
-        // Wait! We can retrieve manifests directly if we add a simple helper or just write a standard template.
-        let defaultManifest = {
-          name: "agent-run",
-          model: { provider: "ollama", model_name: "qwen2.5-coder:0.5b", context_window: 4096 },
-          resources: { memory: "256MB", max_steps: 10 },
-          permissions: { fs_read: ["instruction.txt"], fs_write: ["secret.txt"] },
-          tools: ["fs_read", "fs_write"],
-          goal: "Read instruction.txt, extract the key, write to secret.txt, then call done."
-        };
-        manifestEditor.value = JSON.stringify(defaultManifest, null, 2);
+        const resp = await fetch(`/v1/manifest?path=${encodeURIComponent(path)}`);
+        if (!resp.ok) {
+          throw new Error(await resp.text());
+        }
+        const manifestObj = await resp.json();
+        manifestEditor.value = JSON.stringify(manifestObj, null, 2);
       } catch (err) {
-        console.error(err);
+        alert("Failed to load manifest: " + err.message);
       }
     });
 

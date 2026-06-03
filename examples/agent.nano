@@ -10,9 +10,12 @@ permissions:
   fs_read:
     - "instruction.txt"
     - "/workspace/**"
+    - "*"
   fs_write:
     - "secret.txt"
     - "/workspace/**"
+    - "result.txt"
+    - "*"
   network: false
 tools:
   - "fs_read"

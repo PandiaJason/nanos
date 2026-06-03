@@ -48,6 +48,24 @@ async fn get_status() -> Json<StatusResponse> {
     })
 }
 
+#[derive(Deserialize)]
+struct ManifestQuery {
+    path: String,
+}
+
+// Handler for loading a manifest from file path
+async fn get_manifest(
+    axum::extract::Query(query): axum::extract::Query<ManifestQuery>,
+) -> Result<Json<AgentManifest>, (StatusCode, String)> {
+    match AgentManifest::load_from_file(&query.path) {
+        Ok(manifest) => Ok(Json(manifest)),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            format!("Failed to load manifest: {:?}", e),
+        )),
+    }
+}
+
 // Handler for running agent from payload
 async fn post_run(
     Json(payload): Json<AgentManifest>,
@@ -142,6 +160,7 @@ pub async fn start_server(host: &str, port: u16) -> Result<()> {
         .route("/", get(get_dashboard))
         .route("/dashboard", get(get_dashboard))
         .route("/v1/status", get(get_status))
+        .route("/v1/manifest", get(get_manifest))
         .route("/v1/run", post(post_run))
         .route("/v1/replay", post(post_replay))
         .route("/v1/orchestrate", post(post_orchestrate));
