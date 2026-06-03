@@ -56,7 +56,7 @@ echo "Pulling model '${MODEL}' inside the Docker container..."
 docker exec "${CONTAINER_NAME}" ollama pull "${MODEL}"
 
 echo "Running benchmark script..."
-# Ensure we run docker_vs_host.py from the benchmarks directory
-python3 "${SCRIPT_DIR}/docker_vs_host.py"
+# Ensure we run run_honest_benchmark.py from the benchmarks directory
+python3 "${SCRIPT_DIR}/run_honest_benchmark.py"
 
 echo "Benchmark finished successfully."

@@ -1,1 +1,8 @@
-The secret code is 42.
+To find the secret code, solve this logic puzzle:
+
+If 3 AI agents take 3 minutes to compile 3 lines of WebAssembly, how many minutes does it take 100 AI agents to compile 100 lines of WebAssembly? 
+
+Multiply that resulting number of minutes by 14. 
+Finally, subtract 0 from the result to get the final code.
+
+Write ONLY the final numeric code to secret.txt, then call done.
