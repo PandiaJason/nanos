@@ -336,7 +336,7 @@ binary: "dist/test_agent.wasm" # Target agent compilation binary
 goal: "Extract the secret..." # Mission statement of the agent
 ```
 
-For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification Document](file:///Users/admin/Jas%20Apps/nanos/docs/ffi-spec.md) and the low-level [WASM Syscall ABI Document](file:///Users/admin/Jas%20Apps/nanos/docs/syscall-abi.md).
+For the complete JSON-RPC FFI Protocol specification, see the [FFI Specification Document](docs/ffi-spec.md) and the low-level [WASM Syscall ABI Document](docs/syscall-abi.md).
 
 ---
 
