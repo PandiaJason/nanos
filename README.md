@@ -399,7 +399,7 @@ Unlike WebAssembly projects like **LlamaEdge** or **WasmEdge** which package the
 
 To make performance assertions verifiable and auditable, we include a fully automated, reproducible benchmarking harness in the repository. This allows developers to test raw performance on their own local machines.
 
-### 📊 Benchmark Results (Averaged over multi-run iterations)
+### Benchmark Results (Averaged over multi-run iterations)
 
 | Metric | Host (Native GPU Acceleration) | Docker Container (Hypervisor CPU) | Comparison / Speedup |
 | :--- | :---: | :---: | :---: |
@@ -408,25 +408,25 @@ To make performance assertions verifiable and auditable, we include a fully auto
 | **Sandbox Boot Latency** | **< 3 ms** (WASM Instantiation) | ~1,500 - 5,000 ms (VM Container boot) | **> 500x faster** |
 | **System Memory Footprint** | **~20 MB RAM** (Wasmtime sandbox) | >= 2,000 MB RAM (Linux VM Hypervisor) | **100x lighter** |
 
-### 🔍 Evaluation Criteria & Methodology
+### Evaluation Criteria & Methodology
 Our benchmark harness evaluates both CPU and GPU performance across key parameters:
 1. **Generation Throughput**: Measures token generation latency and speed (tokens generated per second of decoding).
 2. **Prompt Evaluation Speed**: Measures processing speed for initial context prompts (tokens evaluated per second).
 3. **Sandbox Boot Latency**: Measures cold-start boot time from binary loading to FFI readiness.
 4. **Memory Footprint**: Measures Resident Set Size (RSS) memory consumption on the host.
 
-### 🧪 Run the Benchmark Locally
+### Run the Benchmark Locally
 Anyone can reproduce and audit these metrics by executing:
 ```bash
 bash benchmarks/run_benchmark.sh
 ```
 This script automatically spins up an Ollama Docker container, downloads the `qwen2.5-coder:0.5b` model, runs the python test script across multiple iterations to calculate averages, outputs a detailed markdown report, and cleans up all Docker resources.
 
-### ⚖️ Systems Transparency Statement
+### Systems Transparency Statement
 To foster technical trust, we outline the exact systems boundaries where these numbers apply:
-*   **🟢 Where `nanos` is Superior**: On developer workstations (macOS/Windows), Docker runs inside a virtual machine hypervisor which **does not support GPU pass-through** (Apple Metal or direct Windows DirectX) to guest containers. The models are restricted to CPU execution (making Docker ~10x slower). `nanos` executes natively on host hardware with zero VM overhead.
-*   **🟡 Where They Tie**: On CPU-only cloud instances (e.g. AWS EC2 with no GPUs), both systems run Ollama on CPU, yielding equivalent inference speeds.
-*   **🔴 Where Docker is Equal/Superior**: On Linux servers with dedicated NVIDIA GPUs where the container is executed with native GPU passthrough (`docker run --gpus all`), Docker achieves 100% native hardware speed. Additionally, for tasks involving continuous multi-megabyte binary data transfers across the FFI boundary, WASM memory copies can introduce small latencies compared to native process serialization.
+*   **Where `nanos` is Superior**: On developer workstations (macOS/Windows), Docker runs inside a virtual machine hypervisor which **does not support GPU pass-through** (Apple Metal or direct Windows DirectX) to guest containers. The models are restricted to CPU execution (making Docker ~10x slower). `nanos` executes natively on host hardware with zero VM overhead.
+*   **Where They Tie**: On CPU-only cloud instances (e.g. AWS EC2 with no GPUs), both systems run Ollama on CPU, yielding equivalent inference speeds.
+*   **Where Docker is Equal/Superior**: On Linux servers with dedicated NVIDIA GPUs where the container is executed with native GPU passthrough (`docker run --gpus all`), Docker achieves 100% native hardware speed. Additionally, for tasks involving continuous multi-megabyte binary data transfers across the FFI boundary, WASM memory copies can introduce small latencies compared to native process serialization.
 
 ---
 
