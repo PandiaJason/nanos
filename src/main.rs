@@ -134,33 +134,39 @@ fn main() -> Result<()> {
                         agent_manifest.model.path
                     );
 
-                    let system = "You are an AI agent. When you want to execute a tool, you MUST output a raw JSON object and nothing else.
-Allowed tools:
-- fs_read: reads a file. Args: absolute path.
-- web_get: fetches a URL. Args: the URL.
-- done: finishes the task. Args: result summary.
-
-Example output:
-{\"action\": \"fs_read\", \"args\": \"/workspace/report.txt\"}
-";
-                    let prompt = "Read the file /etc/passwd and summarize it. If it fails, output done with 'Failed'.";
-                    let full_prompt = format!(
-                        "<|system|>\n{}\n<|user|>\n{}\n<|assistant|>\n",
-                        system, prompt
-                    );
+                    // Use proper ChatML format (Qwen) with a general-purpose prompt
+                    // that generates long-form text for accurate tok/s measurement
+                    let full_prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nExplain why sandboxed AI agents are important for security in 50 words.<|im_end|>\n<|im_start|>assistant\n";
 
                     let engine = nanos::llm::LlmEngine::new(&agent_manifest.model).unwrap();
 
                     info!("Running warmup inference...");
-                    let _ = engine.infer(&full_prompt).unwrap();
+                    let _ = engine.infer(full_prompt).unwrap();
 
                     info!("Running timed benchmark inference...");
-                    let start = std::time::Instant::now();
-                    let response = engine.infer(&full_prompt).unwrap();
-                    let elapsed = start.elapsed();
+                    let response = engine.infer(full_prompt).unwrap();
 
-                    println!("✅ FFI Inference completed in: {:.2?}", elapsed);
-                    println!("Output length: {} bytes", response.response.len());
+                    let prompt_tps = if response.prompt_eval_ms > 0.0 {
+                        response.prompt_tokens as f64 / (response.prompt_eval_ms / 1000.0)
+                    } else {
+                        0.0
+                    };
+                    let gen_tps = if response.gen_ms > 0.0 {
+                        response.gen_tokens as f64 / (response.gen_ms / 1000.0)
+                    } else {
+                        0.0
+                    };
+
+                    println!();
+                    println!("=== nanos Benchmark Results ===");
+                    println!(
+                        "Prompt:     {} tokens, {:.1} ms ({:.1} tok/s)",
+                        response.prompt_tokens, response.prompt_eval_ms, prompt_tps
+                    );
+                    println!(
+                        "Generation: {} tokens, {:.1} ms ({:.1} tok/s)",
+                        response.gen_tokens, response.gen_ms, gen_tps
+                    );
                 }
                 Err(e) => {
                     error!("Failed to initialize agent: {:?}", e);

@@ -28,6 +28,7 @@ ureq = { version = "2.9", features = ["json"] }
 wasmtime = "45.0.0"
 axum = "0.7.5"
 tower-http = { version = "0.5.2", features = ["cors", "trace"] }
+rayon = "1.9"
 
 [features]
 gpu-cuda = ["llama-cpp-2/cuda"]

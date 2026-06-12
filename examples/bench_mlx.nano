@@ -1,0 +1,15 @@
+name: "bench-mlx"
+model:
+  provider: "mlx"
+  model_name: "mlx-community/Qwen2.5-Coder-0.5B-Instruct-4bit"
+  context_window: 2048
+resources:
+  memory: "512MB"
+  max_steps: 1
+permissions:
+  fs_read: ["*"]
+  fs_write: ["*"]
+  network: false
+tools: []
+goal: "test"
+binary: "dist/test_agent.wasm"

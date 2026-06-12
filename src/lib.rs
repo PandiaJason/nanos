@@ -19,6 +19,7 @@ pub mod network;
 pub mod orchestrator;
 pub mod sandbox;
 pub mod trace;
+pub mod rust_llama;
 
 use anyhow::Result;
 use std::sync::{Arc, Mutex};

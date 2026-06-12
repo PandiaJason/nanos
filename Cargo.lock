@@ -1375,6 +1375,7 @@ dependencies = [
  "axum",
  "clap",
  "llama-cpp-2",
+ "rayon",
  "rusqlite",
  "serde",
  "serde_json",

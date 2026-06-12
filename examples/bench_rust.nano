@@ -1,0 +1,15 @@
+name: "bench-rust"
+model:
+  provider: "rust"
+  path: "models/stories15M.bin"
+  context_window: 256
+resources:
+  memory: "512MB"
+  max_steps: 1
+permissions:
+  fs_read: ["*"]
+  fs_write: ["*"]
+  network: false
+tools: []
+goal: "test"
+binary: "dist/test_agent.wasm"
