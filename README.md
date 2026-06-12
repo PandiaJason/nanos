@@ -178,12 +178,51 @@ To provide developers with maximum flexibility, `nanos` supports multiple backen
 | **Dependency Stack** | Python, mlx, numpy | C++ llama.cpp bindings | **None** (Pure Rust) |
 | **RAM Footprint** | ~500 MB | ~50 MB | **~20 MB** |
 
-### Run the Benchmark Locally
-Anyone can reproduce and audit these metrics by executing:
+### Run the Host vs. Docker Benchmark
+Anyone can reproduce and audit the virtualization overhead comparison metrics by executing:
 ```bash
 bash benchmarks/run_benchmark.sh
 ```
 This script automatically spins up an Ollama Docker container, downloads the `qwen2.5-coder:0.5b` model, runs the python test script across multiple iterations to calculate averages, outputs a detailed markdown report, and cleans up all Docker resources.
+
+### Run the Native Engine Backends Benchmark
+To reproduce the head-to-head comparison of our native MLX, GGUF Metal, and Pure Rust CPU backends:
+
+#### 1. Setup Models
+```bash
+# Create models directory
+mkdir -p models
+
+# Download Pure Rust Llama-2 stories model and tokenizer
+curl -L -o models/stories15M.bin https://huggingface.co/karpathy/tinyllama/resolve/main/stories15M.bin
+curl -L -o models/tokenizer.bin https://huggingface.co/karpathy/tinyllama/resolve/main/tokenizer.bin
+
+# Download GGUF Qwen 0.5B model for local GGUF Metal benchmark
+curl -L -o models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf https://huggingface.co/Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF/resolve/main/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf
+```
+
+#### 2. Setup MLX Python Virtual Environment
+On macOS, build the python virtual environment where `mlx-lm` resides for the persistent daemon process:
+```bash
+python3 -m venv /tmp/venv-mlx
+/tmp/venv-mlx/bin/pip install mlx-lm
+```
+
+#### 3. Execute Benchmarks
+Compile the runtime in release mode and invoke the `bench` command for the respective manifest:
+```bash
+# Build the binary
+cargo build --release
+
+# Run Pure Rust CPU Llama-2 benchmark (~206 tok/s)
+./target/release/nanos bench examples/bench_rust.nano
+
+# Run GGUF Local Metal GPU benchmark (~124 tok/s)
+./target/release/nanos bench examples/bench_local.nano
+
+# Run Apple MLX Metal GPU benchmark (~228 tok/s)
+./target/release/nanos bench examples/bench_mlx.nano
+```
 
 ### Systems Transparency Statement
 To foster technical trust, we outline the exact systems boundaries where these numbers apply:
