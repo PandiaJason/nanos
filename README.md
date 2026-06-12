@@ -208,8 +208,8 @@ nanos <COMMAND> [OPTIONS]
 | :--- | :--- | :--- |
 | **`run`** | Run a single AI agent from a `.nano` manifest | `nanos run examples/agent.nano` |
 | **`serve`** | Serve the agent runtime background daemon and Visual Web Debugger over HTTP | `nanos serve --port 8080` |
-| **`orchestrate`** | Orchestrate cooperative multi-agent fleets locally or as a TCP server | `nanos orchestrate examples/fleet.nano --network --port 9090` |
-| **`node`** | Connect a remote fleet node client back to the distributed server orchestrator | `nanos node --connect 127.0.0.1:9090 --name writer` |
+| **`orchestrate`** | Orchestrate cooperative multi-agent fleets locally or as a TCP server (with auth token) | `nanos orchestrate examples/fleet.nano --network --port 9090 --token secret123` |
+| **`node`** | Connect a remote fleet node client back to the distributed server orchestrator (with auth token) | `nanos node --connect 127.0.0.1:9090 --name writer --token secret123` |
 | **`dashboard`** | Launch the real-time TUI dashboard and Time-Travel debug console | `nanos dashboard examples/fleet.nano` |
 | **`bench`** | Run a native FFI latency benchmark against the LLM model | `nanos bench examples/agent.nano` |
 
@@ -288,6 +288,10 @@ Expose `nanos` as an HTTP daemon and launch the premium visual dashboard compani
 ./target/release/nanos serve --port 8080 --host 127.0.0.1
 ```
 Open `http://localhost:8080` in your browser. Inspect running statuses, step latencies, peak memory consumption, and **click on any step to trigger a Time-Travel Divergent Replay**!
+
+<p align="center">
+  <img src="assets/nanos_dashboard_showcase.png" alt="nanos Visual Web Debugger Dashboard" width="850">
+</p>
 ---
 
 ### 6. Included Examples
