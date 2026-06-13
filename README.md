@@ -64,8 +64,8 @@ One runtime. No localhost tool daemons. No JSON RPC loops. No serialization tax.
 ## Features
 
 *   **Capability-Isolated WASM Sandbox**: Every agent runs inside a strict, metered `wasmtime` store with WASM linear memory isolation, fuel limits to prevent infinite loops, and strict memory caps.
-*   **Persistent MLX Daemon Backend**: Spawns a persistent Python subprocess to keep MLX model weights resident in GPU unified memory on Apple Silicon, eliminating Python startup overhead and generating at **228.5 tok/s**.
-*   **Pure Rust Llama-2 Engine**: A custom native CPU inference engine written in 100% Rust that boots in **24ms** with zero external C++ or Python dependencies, generating at **206.7 tok/s** with $O(1)$ HashMap tokenization, parallel projections, and SIMD optimization.
+*   **Persistent MLX Daemon Backend**: Spawns a persistent Python subprocess to keep MLX model weights resident in GPU unified memory on Apple Silicon, eliminating Python startup overhead and generating at **137.6 tok/s - 205.1 tok/s** (on Qwen 2.5 Coder 0.5B).
+*   **Pure Rust Llama-2 Engine**: A custom native CPU inference engine written in 100% Rust that boots in **24ms** with zero external C++ or Python dependencies, generating at **206.7 tok/s** (on a 15M parameter model) with $O(1)$ HashMap tokenization, parallel projections, and SIMD optimization.
 *   **Native Metal & CUDA GPU Offload**: Model weights are loaded directly into Apple Metal or Linux CUDA graphics memory via native `llama.cpp` layers (`--features gpu-cuda`).
 *   **Multi-Agent Fleet Orchestration**: Orchestrate cooperative multi-agent fleets concurrently sharing a single local `LlmEngine` or across networks using distributed TCP message bus client/server connections.
 *   **Secure Fleet Token Authentication**: Secure client nodes connecting to the TCP orchestrator with cryptographically-safe token handshakes to block unauthorized connections instantly.
@@ -110,10 +110,10 @@ Instead of compiling the matrix math of heavy LLM runtimes into WASM (which adds
 To provide absolute flexibility, `nanos` separates the sandboxed agent from the physical LLM execution layer, supporting three distinct engine backend classes.
 
 ### 1. Pure Rust Llama-2 Engine (`provider: "rust"`)
-A custom CPU-only Llama-2 inference engine built entirely in 100% Rust inside [src/rust_llama.rs](file:///Users/admin/Jas%20Apps/nanos/src/rust_llama.rs). It compiles statically with zero external dynamic runtime or build dependencies.
+A custom CPU-only Llama-2 inference engine built entirely in 100% Rust inside [src/rust_llama.rs](src/rust_llama.rs). It compiles statically with zero external dynamic runtime or build dependencies.
 
 *   **Zero-Allocation Inference Loop**: Pre-allocates all activations, projection buffers, attention scores, and KV Cache arrays in a single `RunState` memory layout during engine initialization, preventing memory fragmentation and page faults.
-*   **$O(1)$ HashMap Tokenizer**: Populates a `vocab_map` (HashMap) during model load. Greedy prefix lookups are resolved in $O(1)$ time, yielding a **116x prompt evaluation speedup (321,818.0 tok/sec)** compared to linear vector searches.
+*   **$O(1)$ HashMap Tokenizer**: Populates a `vocab_map` (HashMap) during model load. Greedy prefix lookups are resolved in $O(1)$ time, yielding a **116x prompt evaluation speedup (321,818.0 tok/sec on a 15M parameter model)** compared to linear vector searches.
 *   **Rayon Task-Level Parallelism**: Evaluates independent projection steps (Q, K, V projections and FFN gate/up matrices) concurrently using `rayon::join`. Each thread runs sequentially to avoid context-switching and fine-grained loop scheduling overheads.
 *   **Precomputed RoPE Lookup Tables**: Cache cosine and sine rotary position embeddings for the context window on model load, eliminating all runtime transcendental math calls (`cos`, `sin`, `powf`) from the generation loop.
 *   **LLVM NEON Vectorization**: Uses explicit bounds check assertions (`assert_eq!`) and pre-sliced arrays to eliminate runtime bounds checks, allowing the LLVM compiler to emit optimized SIMD instructions.
@@ -124,7 +124,7 @@ For large-scale models (3B+ parameters), `nanos` integrates Apple’s official d
 *   **Persistent Subprocess Daemon**: PyTorch and MLX startup loops take **1.5 to 2.0 seconds** of cold boot latency. `nanos` bypasses this by spawning a persistent Python daemon process exactly **once** on engine load, keeping model weights permanently resident in GPU memory.
 *   **STDIN/STDOUT FFI Channel**: Passes JSON-RPC prompt requests from the host Rust engine to the Python daemon over low-latency standard I/O pipes.
 *   **Real-Time Token Streaming**: Streams decoded tokens back to the host process via standard stdout/stderr streams to display tokens instantly.
-*   **Throughput**: Generates at **228.5 tokens/sec** on macOS (a **1.84x Speedup** over llama.cpp Metal GGUF).
+*   **Throughput**: Generates at **137.6 - 205.1 tokens/sec** on macOS for Qwen 2.5 Coder 0.5B.
 
 ### 3. Local GGUF Metal/CUDA (`provider: "local"`)
 Native bindings to C++ `llama.cpp` using static Metal shader GPU offload on macOS and CUDA Toolkit page-locked allocations on Linux. It is ideal for standardized GGUF models requiring fast startup times and hardware GPU acceleration.
@@ -195,15 +195,20 @@ Our benchmark harness evaluates both CPU and GPU performance across key paramete
 
 ### Native Backend Benchmarks (Apple Silicon M1 Pro)
 
-To provide developers with maximum flexibility, `nanos` supports multiple backend engine execution layers. Here is the head-to-head comparison of our local GPU/CPU execution backends running a local story generation model:
+To provide developers with maximum flexibility, `nanos` supports multiple backend engine execution layers. Here is the head-to-head comparison of our local GPU/CPU execution backends running the **Qwen 2.5 Coder 0.5B** model:
 
-| Metric | Apple MLX GPU (`provider: "mlx"`) | nanos GGUF Metal (`provider: "local"`) | nanos Native Rust CPU (`provider: "rust"`) |
-| :--- | :---: | :---: | :---: |
-| **Generation Throughput** | **228.5 tok/sec** | 124.1 tok/sec | **206.7 tok/sec** |
-| **Prompt Eval Speed** | 289.0 tok/sec | 1128.2 tok/sec | **321,818.0 tok/sec** |
-| **Model Load / Startup** | ~1.5 - 2.0 s | ~100 ms | **24 ms** |
-| **Dependency Stack** | Python, mlx, numpy | C++ llama.cpp bindings | **None** (Pure Rust) |
-| **RAM Footprint** | ~500 MB | ~50 MB | **~20 MB** |
+| Metric / Dimension | **nanos GGUF CPU** (`provider: "local-cpu"`) | **nanos GGUF Hybrid** (`provider: "local-hybrid"`) | **Apple MLX persistent Daemon** (`provider: "mlx"`) | **nanos Local C++ Metal** (`provider: "local"`) |
+| :--- | :---: | :---: | :---: | :---: |
+| **Model Format** | GGUF Q4_K_M | GGUF Q4_K_M | MLX 4-bit | GGUF Q4_K_M |
+| **Generation Speed** | **125.6 tok/sec** | 92.6 tok/sec | 137.6 tok/sec (up to 205.1 tok/s*) | **151.2 tok/sec** |
+| **Prompt Ingest Speed** | 279.2 tok/sec | 500.1 tok/sec | 256.6 tok/sec (up to 1,102.6 tok/s*) | **31,313.4 tok/sec\*\*** |
+| **Model Load / Boot** | **~150 ms** | ~150 ms | ~1.5 - 2.0 s | ~150 ms |
+| **Hardware Used** | CPU (4 threads optimized) | Hybrid CPU+Metal (12 layers offloaded) | Apple Silicon GPU (Metal) | Apple Silicon GPU (Metal, 2 threads optimized) |
+| **RAM Footprint** | **~300 MB** | ~300 MB | ~500 MB (Python VM) | ~300 MB |
+
+*\*Note: High throughput figures on MLX reflect connected-power states; battery management on macOS limits GPU clock speeds, throttling performance across backends by ~1.8x.*
+
+*\*\*Note: The high prompt ingest speed on Metal GPU is achieved because the entire prompt context is evaluated in a single parallelized GPU pass using unified memory buffers. Other backends (like CPU and MLX Daemon) incur thread synchronization and process boundary I/O latencies.*
 
 ### Run the Host vs. Docker Benchmark
 Anyone can reproduce and audit the virtualization overhead comparison metrics by executing:
@@ -238,16 +243,22 @@ python3 -m venv /tmp/venv-mlx
 #### 3. Execute Benchmarks
 Compile the runtime in release mode and invoke the `bench` command for the respective manifest:
 ```bash
-# Build the binary
+# Build the binary with release optimizations
 cargo build --release
 
-# Run Pure Rust CPU Llama-2 benchmark (~206 tok/s)
+# Run Pure Rust CPU Llama-2 stories benchmark (~206 tok/s)
 ./target/release/nanos bench examples/bench_rust.nano
 
-# Run GGUF Local Metal GPU benchmark (~124 tok/s)
-./target/release/nanos bench examples/bench_local.nano
+# Run GGUF Local GPU Metal benchmark (~151 tok/s)
+./target/release/nanos bench examples/bench_local_qwen05b.nano
 
-# Run Apple MLX Metal GPU benchmark (~228 tok/s)
+# Run GGUF Local CPU-only benchmark (~126 tok/s)
+./target/release/nanos bench examples/bench_local_cpu_qwen05b.nano
+
+# Run GGUF Local Hybrid CPU/GPU benchmark (~92 tok/s)
+./target/release/nanos bench examples/bench_local_hybrid_qwen05b.nano
+
+# Run Apple MLX Metal GPU benchmark (~137 - 205 tok/s)
 ./target/release/nanos bench examples/bench_mlx.nano
 ```
 
@@ -487,7 +498,7 @@ To remain transparent, nanos acknowledges the following boundaries in its curren
 | Feature | `nanos` | E2B | LangChain | Docker + Python |
 | :--- | :--- | :--- | :--- | :--- |
 | **Cold Start** | **< 3ms** | ~2s | ~3s | ~30s |
-| **RAM Overhead**| **~39MB** | ~200MB | ~500MB | ~450MB |
+| **RAM Overhead**| **~20MB (idle) / ~39MB (active)** | ~200MB | ~500MB | ~450MB |
 | **Sandbox** | **WASM process-isolated** | Cloud VM container | None | Host container |
 | **GPU Access** | **Direct Metal / CUDA** | None | None | Manual configuration |
 | **Air-Gapped** | **Yes** | No (Cloud only) | No | Partial |

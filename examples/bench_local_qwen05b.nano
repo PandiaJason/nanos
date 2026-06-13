@@ -1,0 +1,15 @@
+name: "bench-local-qwen05b"
+model:
+  provider: "local"
+  path: "models/qwen2.5-coder-0.5b-instruct-q4_k_m.gguf"
+  context_window: 2048
+resources:
+  memory: "512MB"
+  max_steps: 1
+permissions:
+  fs_read: ["*"]
+  fs_write: ["*"]
+  network: false
+tools: []
+goal: "test"
+binary: "dist/test_agent.wasm"

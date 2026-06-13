@@ -1,0 +1,15 @@
+name: "bench-rust-qwen"
+model:
+  provider: "rust"
+  path: "models/qwen2.5-0.5b"
+  context_window: 256
+resources:
+  memory: "1024MB"
+  max_steps: 1
+permissions:
+  fs_read: ["*"]
+  fs_write: ["*"]
+  network: false
+tools: []
+goal: "test"
+binary: "dist/test_agent.wasm"

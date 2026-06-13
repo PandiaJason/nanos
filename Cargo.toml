@@ -33,3 +33,10 @@ rayon = "1.9"
 [features]
 gpu-cuda = ["llama-cpp-2/cuda"]
 
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+

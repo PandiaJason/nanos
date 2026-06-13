@@ -167,6 +167,8 @@ fn main() -> Result<()> {
                         "Generation: {} tokens, {:.1} ms ({:.1} tok/s)",
                         response.gen_tokens, response.gen_ms, gen_tps
                     );
+                    drop(engine);
+                    std::thread::sleep(std::time::Duration::from_millis(150));
                 }
                 Err(e) => {
                     error!("Failed to initialize agent: {:?}", e);

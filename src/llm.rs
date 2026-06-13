@@ -48,7 +48,7 @@ impl LlmEngine {
         let provider = config.provider.as_deref().unwrap_or("local");
 
         match provider {
-            "local" => {
+            "local" | "local-cpu" | "local-hybrid" => {
                 let model_path = config.path.as_ref().ok_or_else(|| {
                     anyhow::anyhow!("Local GGUF model path is required when provider is local")
                 })?;
@@ -57,6 +57,8 @@ impl LlmEngine {
                 let (tx, rx) = mpsc::channel::<LlmRequest>();
 
                 let path = model_path.clone();
+                let is_cpu = provider == "local-cpu";
+                let is_hybrid = provider == "local-hybrid";
                 info!(
                     "Spawning dedicated LLM background thread for GGUF model: {}...",
                     path
@@ -65,7 +67,13 @@ impl LlmEngine {
                     let backend = LlamaBackend::init().expect("Failed to initialize llama backend");
 
                     // Detect platform GPU capability and offload all layers if available
-                    let gpu_layers: u32 = if cfg!(target_os = "macos") {
+                    let gpu_layers: u32 = if is_cpu {
+                        info!("local-cpu provider specified — running on CPU (0 layers offloaded)");
+                        0
+                    } else if is_hybrid {
+                        info!("local-hybrid provider specified — running on both Metal and CPU (12 layers offloaded)");
+                        12
+                    } else if cfg!(target_os = "macos") {
                         info!("Detected macOS — enabling Metal GPU offload (all layers)");
                         99 // Offload all transformer layers to Apple Metal
                     } else if cfg!(target_os = "linux") {
@@ -88,7 +96,11 @@ impl LlmEngine {
                     // ── OPTIMIZATION: Create context ONCE and reuse across requests ──
                     // This avoids per-request Metal pipeline compilation (~25ms),
                     // compute buffer allocation (298 MiB), and graph reservation.
-                    let n_cpu_threads = num_physical_cores();
+                    let default_threads = if gpu_layers > 0 { 2 } else { 4 };
+                    let n_cpu_threads = std::env::var("NANOS_THREADS")
+                        .ok()
+                        .and_then(|s| s.parse::<i32>().ok())
+                        .unwrap_or(default_threads);
                     let mut ctx_params =
                         llama_cpp_2::context::params::LlamaContextParams::default();
                     if let Some(nz) = core::num::NonZeroU32::new(context_window) {
@@ -170,14 +182,8 @@ impl LlmEngine {
                             // Direct raw logits access — bypasses LlamaTokenData iterator
                             // get_logits_ith returns &[f32] of length n_vocab (raw pointer)
                             let logits = ctx.get_logits_ith(batch.n_tokens() - 1);
-                            let mut best_idx: u32 = 0;
-                            let mut best_logit = f32::NEG_INFINITY;
-                            for (i, &logit) in logits.iter().enumerate() {
-                                if logit > best_logit {
-                                    best_logit = logit;
-                                    best_idx = i as u32;
-                                }
-                            }
+                            let best_idx = argmax(logits);
+                            let best_logit = logits[best_idx];
                             let best_id = llama_cpp_2::token::LlamaToken::new(best_idx as i32);
 
                             // NaN safety: if best_logit is NaN, all logits are corrupt
@@ -601,14 +607,7 @@ except Exception as e:
                     transformer.forward(next_token, pos, &mut state);
                     pos += 1;
 
-                    let mut best_idx = 0;
-                    let mut best_val = state.logits[0];
-                    for (idx, &val) in state.logits.iter().enumerate().skip(1) {
-                        if val > best_val {
-                            best_val = val;
-                            best_idx = idx;
-                        }
-                    }
+                    let best_idx = argmax(&state.logits);
 
                     if best_idx == 2 || pos >= transformer.config.seq_len {
                         break;
@@ -688,19 +687,6 @@ except Exception as e:
     }
 }
 
-/// Detect physical CPU core count for optimal Metal threading
-fn num_physical_cores() -> i32 {
-    // On Apple Silicon, use performance cores only
-    // M1 Pro: 8P+2E, M1 Max: 8P+2E, M2 Pro: 8P+4E, M3 Pro: 6P+6E
-    // Default to half of available threads (which counts hyperthreads on Intel)
-    let cpus = std::thread::available_parallelism()
-        .map(|n| n.get() as i32)
-        .unwrap_or(4);
-    // Apple Silicon doesn't have hyperthreading, so available_parallelism = total cores
-    // Use all performance cores (typically total - 2 efficiency cores)
-    std::cmp::max(1, cpus - 2)
-}
-
 fn parse_chatml_to_json_messages(prompt: &str) -> serde_json::Value {
     let mut messages = Vec::new();
     let mut remaining = prompt;
@@ -744,4 +730,43 @@ fn parse_chatml_to_json_messages(prompt: &str) -> serde_json::Value {
     } else {
         serde_json::json!(messages)
     }
+}
+
+#[inline(always)]
+fn argmax(slice: &[f32]) -> usize {
+    let chunks = slice.chunks_exact(8);
+    let remainder = chunks.remainder();
+    
+    let mut max_val = [f32::NEG_INFINITY; 8];
+    let mut max_idx = [0usize; 8];
+    
+    for (chunk_idx, chunk) in chunks.enumerate() {
+        let base_idx = chunk_idx * 8;
+        for j in 0..8 {
+            let val = chunk[j];
+            if val > max_val[j] {
+                max_val[j] = val;
+                max_idx[j] = base_idx + j;
+            }
+        }
+    }
+    
+    let mut best_idx = 0usize;
+    let mut best_logit = f32::NEG_INFINITY;
+    for j in 0..8 {
+        if max_val[j] > best_logit {
+            best_logit = max_val[j];
+            best_idx = max_idx[j];
+        }
+    }
+    
+    let base_idx = slice.len() - remainder.len();
+    for (j, &val) in remainder.iter().enumerate() {
+        if val > best_logit {
+            best_logit = val;
+            best_idx = base_idx + j;
+        }
+    }
+    
+    best_idx
 }
